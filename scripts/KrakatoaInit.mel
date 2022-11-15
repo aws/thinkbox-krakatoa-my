@@ -1,0 +1,85 @@
+// Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
+////////////////////////////////////
+// Maya Krakatoa Renderer Creation Script
+//
+// Written By: Conrad Wiebe, Stephen Kiazyk
+// Thinkbox Software Inc.
+// 2013
+///////////////////////////////////
+
+source "KrakatoaRenderer.mel";
+source "KMY2PRT_Saver.mel";
+source "KrakatoaModifiers.mel";
+source "KrakatoaModEditor.mel";
+source "KrakatoaMagma.mel";
+
+global proc RunKrakatoaRender(int $width, int $height, int $doShadow, int $doGlow, string $camera, string $options)
+{
+	// ensure that the krakatoa render settings node exists before trying to render
+	CreateKrakatoaSettingsNode();
+	int $results = `KrakatoaRender -cam $camera`;
+}
+
+global proc RunKrakatoaBatchRender(string $options)
+{
+	// ensure krakatoa is loaded before trying to run the batch render
+	if (!`pluginInfo -q -l "MayaKrakatoa"`)
+	{
+		loadPlugin "MayaKrakatoa";
+	}
+	
+	CreateKrakatoaSettingsNode();
+	KrakatoaBatchRender();
+}
+
+global proc RunKrakatoaBatchRenderOptions()
+{
+	window -title "Batch Render Frame" batchRenderWindow;
+		rowLayout
+			-numberOfColumns 3
+			-columnWidth3 120 120 120
+			-columnAlign3 "center" "center" "center";
+
+		button -label "Batch render and close" -width 120 -command "mayaBatchRender; deleteUI batchRenderWindow";
+		button -label "Batch render" -width 120 -command "mayaBatchRender";
+		button -label "Close" -width 120 -command "deleteUI batchRenderWindow";
+	showWindow batchRenderWindow;
+}
+
+global proc createKrakatoaRenderSettingsTab()
+{
+	string $parent = `setParent -query`;
+	string $child = `createKrakatoaRenderSettingsUI`;
+	formLayout -edit -af $child "top" 5 -af $child "bottom" 0 -af $child "left" 0 -af $child "right" 0 $parent;
+}
+
+global proc updateKrakatoaRenderSettingsTab()
+{
+	print "This is actually never ever called, so it doesn't matter what you put in here\n";
+}
+
+// ENTRY POINT
+// This is where we actually register the krakatoa renderer to Maya
+
+renderer -rendererUIName "Krakatoa" 
+	-renderProcedure RunKrakatoaRender
+	-batchRenderProcedure RunKrakatoaBatchRender
+	-batchRenderOptionsProcedure RunKrakatoaBatchRenderOptions
+	-commandRenderProcedure RunKrakatoaBatchRender
+	-batchRenderOptionsStringProcedure KrakatoaLocalBatchRenderOptionsString
+	-cancelBatchRenderProcedure "batchRender" //This calls maya softwares default cancel call which kills the process o the batch render
+	MayaKrakatoa;
+
+// This is a hack to get around Maya not loading a function that it expects to call every time the 
+// renderer tab is changed, whether we're using it or not
+if (!`exists "updateMayaImageFormatControl"`)
+{
+	source "others/createMayaSoftwareCommonGlobalsTab.mel";
+}
+
+renderer -edit -addGlobalsTab "Common" createMayaSoftwareCommonGlobalsTab updateMayaSoftwareCommonGlobalsTab MayaKrakatoa;
+renderer -edit -addGlobalsTab "Krakatoa Settings" createKrakatoaRenderSettingsTab updateKrakatoaRenderSettingsTab MayaKrakatoa;
+
+// Add a "Open scene" callback. this will provide attribute update callbacks for our modifier system.
+scriptJob -e "SceneOpened" "KMYMOD_addModifierCallbackForAllSceneItems()";

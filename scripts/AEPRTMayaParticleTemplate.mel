@@ -1,0 +1,48 @@
+// Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
+////////////////////////////////////
+// Attribute Editor Template for the Maya Particles Wrapper Node
+//
+// Written By: Matthew Yu
+// Thinkbox Software Inc.
+// 2013
+///////////////////////////////////
+
+global proc AEPRTMayaParticleTemplate( string $nodeName ) {
+
+	editorTemplate -beginScrollLayout;
+
+	editorTemplate -beginLayout "Particles" -collapse false;
+		gridLayout -nc 2;
+			editorTemplate -callCustom "KrakatoaPRTMayaParticleSelectButton" "KrakatoaPRTMayaParticleUpdateButton" "inParticles";
+		setParent ..;
+	editorTemplate -endLayout;
+
+	// To Suppress
+	string $toSuppress[] = { /*"caching", "nodeState"*/ };
+
+	// manually supress each such item
+	for ($value in $toSuppress)
+		editorTemplate -suppress $value;
+
+	editorTemplate -addExtraControls;
+	
+	editorTemplate -endScrollLayout;
+}
+
+global proc KrakatoaPRTMayaParticleSelectButton ( string $node )
+{
+	button -label "Select Particle System" SelectParticleButton;
+	KrakatoaPRTMayaParticleUpdateButton $node;
+}
+
+global proc KrakatoaPRTMayaParticleUpdateButton (string $node )
+{
+	string $buffer[];
+	tokenize $node "." $buffer;
+	string $command =
+		"string $prtnode = \"" + $buffer[0] + "\";\n" +
+		"string $mayaprt = `KMY_getMayaParticleFromPRTMayaParticle $prtnode`;\n" +
+		"select -r $mayaprt;\n";
+	button -e -c $command SelectParticleButton;
+}

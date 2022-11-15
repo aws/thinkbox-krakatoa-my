@@ -1,0 +1,341 @@
+// Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
+////////////////////////////////////
+// Attribute Editor Template for the PRTVolume Node
+//
+// Written By: Stephen Kiazyk
+// Extended By: Borislav "Bobo" Petrov
+// Thinkbox Software Inc.
+// 2012
+///////////////////////////////////
+
+global proc AEPRTVolumeTemplate( string $nodeName )
+{
+	editorTemplate -beginScrollLayout;
+
+	editorTemplate -beginLayout "Mesh Input Control" -collapse 0;
+		editorTemplate -callCustom "PRTVolumeMakeConnectMeshButton" "PRTVolumeUpdateConnectMeshButton" "inMesh";
+		editorTemplate -label "Use World Space" -addControl "inUseWorldSpace";
+	editorTemplate -endLayout;
+	
+	editorTemplate -beginLayout "Mesh Input Advanced Tools" -collapse 1;
+		editorTemplate -callCustom "PRTVolumeMakeRenameButton" "PRTVolumeUpdateRenameButton" "inMesh";
+		editorTemplate -callCustom "PRTVolumeMakeAlignTransformButton" "PRTVolumeUpdateAlignTransformButton" "inMesh";
+		editorTemplate -callCustom "PRTVolumeMakeBoundingBoxButton" "PRTVolumeUpdateBoundingBoxButton" "inMesh";
+		editorTemplate -callCustom "PRTVolumeMakeAdaptiveSpacingButton" "PRTVolumeUpdateAdaptiveSpacingButton" "inMesh";
+	editorTemplate -endLayout;
+
+	editorTemplate -beginLayout "Spacing Settings" -collapse 0;
+		editorTemplate -label "Render Spacing" -addControl "inRenderSpacing";
+		editorTemplate -label "Use Viewport Spacing" -addControl "inUseCustomViewportSpacing";
+		editorTemplate -label "Viewport Spacing" -addControl "inViewportSpacing";
+	editorTemplate -endLayout;
+
+	editorTemplate -beginLayout "Subdivision Settings" -collapse 0;
+		editorTemplate -label "Use Multiple Subdivisions Per Region" -addControl "inSubdivideVoxel";
+		editorTemplate -label "Number of Subdivisions" -addControl "inNumSubdivisions";
+	editorTemplate -endLayout;
+	
+	editorTemplate -beginLayout "Jitter" -collapse 0;
+		editorTemplate -label "Enable Random Jitter" -addControl "inRandomJitter";
+		editorTemplate -label "Well Distributed Jitter" -addControl "inJitterWellDistributed";
+		editorTemplate -label "Jitter Multiple Per Region" -addControl "inJitterMultiplePerVoxel";
+		editorTemplate -label "Jitter Count Per Region" -addControl "inJitterCountPerVoxel";
+		editorTemplate -label "Random Seed" -addControl "inRandomSeed";
+		editorTemplate -label "Distinct Random Values" -addControl "inNumDistinctRandomValues";
+	editorTemplate -endLayout;
+	
+	editorTemplate -beginLayout "Viewport Settings" -collapse false;
+		editorTemplate -label "Enable in Viewport" -addControl "inEnableInViewport";
+		editorTemplate -label "Disable Subdivisions in Viewport" -addControl "inViewportDisableSubdivision";
+		editorTemplate -label "Viewport Percent Limit" -addControl "inViewportParticlePercent";
+		editorTemplate -label "Enable Viewport Particle Limit" -addControl "inEnableViewportParticleLimit";
+		editorTemplate -label "Viewport Limit (x1000)" -addControl "inViewportParticleLimit";
+		editorTemplate -label "Viewport Display Mode" -addControl "inViewportDisplayMode";
+	editorTemplate -endLayout;
+
+	editorTemplate -beginLayout "Misc Settings" -collapse false;
+		editorTemplate -label "Use Surface Shell" -addControl "inUseSurfaceShell";
+		editorTemplate -label "Surface Shell Start" -addControl "inSurfaceShellStart";
+		editorTemplate -label "Surface Shell Thickness" -addControl "inSurfaceShellThickness";
+	editorTemplate -endLayout;
+	
+	// Unless an attribute is manually supressed, maya will automatically fill in all remaining attributes at the bottom of the attribute editor panel.
+	// This was generated mostly from a call to `listAttr $nodeName`;
+	string $toSuppress[] = { "inMayaMagma", "message", "caching", "isHistoricallyInteresting", "nodeState", "binMembership", "hyperLayout", "isCollapsed", "blackBox", "borderConnections", "isHierarchicalConnection", "publishedNodeInfo", "publishedNodeInfo.publishedNode", "publishedNodeInfo.isHierarchicalNode", "publishedNodeInfo.publishedNodeType", "rmbCommand", "templateName", "templatePath", "viewName", "iconName", "viewMode", "templateVersion", "uiTreatment", "customTreatment", "creator", "creationDate", "containerType", "boundingBox", "boundingBoxMin", "boundingBoxMinX", "boundingBoxMinY", "boundingBoxMinZ", "boundingBoxMax", "boundingBoxMaxX", "boundingBoxMaxY", "boundingBoxMaxZ", "boundingBoxSize", "boundingBoxSizeX", "boundingBoxSizeY", "boundingBoxSizeZ", "center", "boundingBoxCenterX", "boundingBoxCenterY", "boundingBoxCenterZ", "matrix", "inverseMatrix", "worldMatrix", "worldInverseMatrix", "parentMatrix", "parentInverseMatrix", "visibility", "intermediateObject", "template", "ghosting", "instObjGroups", "instObjGroups.objectGroups", "instObjGroups.objectGroups.objectGrpCompList", "instObjGroups.objectGroups.objectGroupId", "instObjGroups.objectGroups.objectGrpColor", "useObjectColor", "objectColor", "drawOverride", "overrideDisplayType", "overrideLevelOfDetail", "overrideShading", "overrideTexturing", "overridePlayback", "overrideEnabled", "overrideVisibility", "overrideColor", "lodVisibility", "renderInfo", "identification", "layerRenderable", "layerOverrideColor", "renderLayerInfo", "renderLayerInfo.renderLayerId", "renderLayerInfo.renderLayerRenderable", "renderLayerInfo.renderLayerColor", "ghostingControl", "ghostCustomSteps", "ghostPreSteps", "ghostPostSteps", "ghostStepSize", "ghostFrames", "ghostColorPreA", "ghostColorPre", "ghostColorPreR", "ghostColorPreG", "ghostColorPreB", "ghostColorPostA", "ghostColorPost", "ghostColorPostR", "ghostColorPostG", "ghostColorPostB", "ghostRangeStart", "ghostRangeEnd", "ghostDriver", "renderType", "renderVolume", "visibleFraction", "motionBlur", "visibleInReflections", "visibleInRefractions", "castsShadows", "receiveShadows", "maxVisibilitySamplesOverride", "maxVisibilitySamples", "geometryAntialiasingOverride", "antialiasingLevel", "shadingSamplesOverride", "shadingSamples", "maxShadingSamples", "volumeSamplesOverride", "volumeSamples", "depthJitter", "ignoreSelfShadowing", "primaryVisibility", "referenceObject", "compInstObjGroups", "compInstObjGroups.compObjectGroups", "compInstObjGroups.compObjectGroups.compObjectGrpCompList", "compInstObjGroups.compObjectGroups.compObjectGroupId", "tweak", "relativeTweak", "controlPoints", "controlPoints.xValue", "controlPoints.yValue", "controlPoints.zValue", "weights", "tweakLocation", "blindDataNodes", "uvPivot", "uvPivotX", "uvPivotY", "uvSet", "uvSet.uvSetName", "uvSet.uvSetPoints", "uvSet.uvSetPoints.uvSetPointsU", "uvSet.uvSetPoints.uvSetPointsV", "uvSet.uvSetTweakLocation", "currentUVSet", "displayImmediate", "displayColors", "displayColorChannel", "currentColorSet", "colorSet", "colorSet.colorName", "colorSet.clamped", "colorSet.representation", "colorSet.colorSetPoints", "colorSet.colorSetPoints.colorSetPointsR", "colorSet.colorSetPoints.colorSetPointsG", "colorSet.colorSetPoints.colorSetPointsB", "colorSet.colorSetPoints.colorSetPointsA", "ignoreHwShader", "doubleSided", "opposite", "smoothShading", "boundingBoxScale", "boundingBoxScaleX", "boundingBoxScaleY", "boundingBoxScaleZ", "featureDisplacement", "initialSampleRate", "extraSampleRate", "textureThreshold", "normalThreshold", "displayHWEnvironment", "collisionOffsetVelocityIncrement", "collisionOffsetVelocityIncrement.collisionOffsetVelocityIncrement_Position", "collisionOffsetVelocityIncrement.collisionOffsetVelocityIncrement_FloatValue", "collisionOffsetVelocityIncrement.collisionOffsetVelocityIncrement_Interp", "collisionDepthVelocityIncrement", "collisionDepthVelocityIncrement.collisionDepthVelocityIncrement_Position", "collisionDepthVelocityIncrement.collisionDepthVelocityIncrement_FloatValue", "collisionDepthVelocityIncrement.collisionDepthVelocityIncrement_Interp", "collisionOffsetVelocityMultiplier", "collisionOffsetVelocityMultiplier.collisionOffsetVelocityMultiplier_Position", "collisionOffsetVelocityMultiplier.collisionOffsetVelocityMultiplier_FloatValue", "collisionOffsetVelocityMultiplier.collisionOffsetVelocityMultiplier_Interp", "collisionDepthVelocityMultiplier", "collisionDepthVelocityMultiplier.collisionDepthVelocityMultiplier_Position", "collisionDepthVelocityMultiplier.collisionDepthVelocityMultiplier_FloatValue", "collisionDepthVelocityMultiplier.collisionDepthVelocityMultiplier_Interp", "inMesh", "inMeshTransform", "inUseWorldSpace", "inRenderSpacing", "inUseCustomViewportSpacing", "inViewportSpacing", "inUseDensityCompensation", "inSubdivideVoxel", "inNumSubdivisions", "inRandomJitter", "inJitterWellDistributed", "inJitterMultiplePerVoxel", "inJitterCountPerVoxel", "inRandomSeed", "inNumDistinctRandomValues", "inEnableInViewport", "inViewportDisableSubdivision", "inViewportParticlePercent", "inEnableViewportParticleLimit", "inViewportParticleLimit", "inViewportDisplayMode", "inUseSurfaceShell", "inSurfaceShellStart", "inSurfaceShellThickness", "outViewportMeshLevelSetProxy", "outViewportLevelSetSamplerProxy", "outViewportLevelSetSamplerSubdivisionsProxy", "outViewportParticleCacheProxy", "outRenderMeshLevelSetProxy", "outRenderLevelSetSamplerProxy", "outRenderLevelSetSamplerSubdivisionsProxy" };
+    
+	// manually supress each such item
+	for ($value in $toSuppress)
+		editorTemplate -suppress $value;
+		
+	editorTemplate -addExtraControls;
+
+	editorTemplate -endScrollLayout;
+}
+
+global proc PRTVolumeMakeAlignTransformButton (string $attributeName) 
+{
+	setUITemplate -pst attributeEditorTemplate;
+		button PRTVolumeAlignTransformButton;
+	setUITemplate -ppt;
+	
+	PRTVolumeUpdateAlignTransformButton($attributeName);
+}
+
+global proc PRTVolumeMakeBoundingBoxButton (string $attributeName)
+{
+	setUITemplate -pst attributeEditorTemplate;
+		button PRTVolumeBoundingBoxButton;
+	setUITemplate -ppt;
+	
+	PRTVolumeUpdateBoundingBoxButton($attributeName);
+}
+
+global proc PRTVolumeUpdateBoundingBoxButton (string $attributeName)
+{
+	
+	if (`objExists $attributeName`)
+	{
+		int $isConnected = `connectionInfo -id $attributeName`;
+
+		string $toks[];
+		tokenize($attributeName, ".", $toks);
+		if (!$isConnected)
+		{
+			button -e -label ("TOGGLE Bounding Box Display of Source Mesh") PRTVolumeBoundingBoxButton;	
+			button -e -enable false PRTVolumeBoundingBoxButton;	
+		}
+		else
+		{
+			string $meshPlug = ($toks[0] + ".inMesh");
+			string $meshSource = `connectionInfo -sourceFromDestination $meshPlug`;
+			string $toks2[];
+			tokenize($meshSource, ".", $toks2);
+			button -e -c ("PRTVolumeToggleBoundingBox(\"" + $toks[0] + "\");") PRTVolumeBoundingBoxButton;
+			button -e -label ("TOGGLE Bounding Box Display of Source Mesh") PRTVolumeBoundingBoxButton;	
+			button -e -enable true PRTVolumeBoundingBoxButton;	
+		}
+	}	
+}
+
+global proc PRTVolumeMakeAdaptiveSpacingButton (string $attributeName)
+{
+	setUITemplate -pst attributeEditorTemplate;
+		button PRTVolumeAdaptiveSpacingButton;
+	setUITemplate -ppt;
+	
+	PRTVolumeUpdateAdaptiveSpacingButton($attributeName);	
+}
+
+global proc PRTVolumeUpdateAdaptiveSpacingButton (string $attributeName)
+{
+	if (`objExists $attributeName`)
+	{
+		int $isConnected = `connectionInfo -id $attributeName`;
+
+		string $toks[];
+		tokenize($attributeName, ".", $toks);
+		if (!$isConnected)
+		{
+			button -e -label ("ADAPT Viewport Spacing To Bounding Box of Source Mesh") PRTVolumeAdaptiveSpacingButton;	
+			button -e -enable false PRTVolumeAdaptiveSpacingButton;	
+		}
+		else
+		{
+			string $meshPlug = ($toks[0] + ".inMesh");
+			string $meshSource = `connectionInfo -sourceFromDestination $meshPlug`;
+			string $toks2[];
+			tokenize($meshSource, ".", $toks2);
+			button -e -c ("PRTVolumeAdaptToBoundingBox(\"" + $toks[0] + "\");") PRTVolumeAdaptiveSpacingButton;
+			button -e -label ("ADAPT Viewport Spacing To Bounding Box of Source Mesh") PRTVolumeAdaptiveSpacingButton;	
+			button -e -enable true PRTVolumeAdaptiveSpacingButton;	
+		}
+	}	
+}
+
+global proc PRTVolumeAdaptToBoundingBox(string $attributeName)
+{
+	string $meshPlug = $attributeName+".inMesh";
+	string $meshSource = `connectionInfo -sourceFromDestination $meshPlug`;
+	string $toks2[];
+	tokenize($meshSource, ".", $toks2);
+	
+	PRTVolumeAdaptiveViewportSpacing ($toks2[0], $attributeName);
+}
+
+
+global proc PRTVolumeMakeRenameButton (string $attributeName)
+{
+	setUITemplate -pst attributeEditorTemplate;
+		button PRTVolumeRenameButton;
+	setUITemplate -ppt;
+	
+	PRTVolumeUpdateRenameButton($attributeName);
+}
+global proc PRTVolumeUpdateRenameButton (string $attributeName)
+{
+	if (`objExists $attributeName`)
+	{
+		int $isConnected = `connectionInfo -id $attributeName`;
+		string $toks[];
+		tokenize($attributeName, ".", $toks);
+		if (!$isConnected)
+		{
+			button -e -enable false PRTVolumeRenameButton;	
+			button -e -label ("RENAME PRTVolume Based On Source Mesh") PRTVolumeRenameButton;			
+		}
+		else
+		{
+			string $meshPlug = ($toks[0] + ".inMesh");
+			string $meshSource = `connectionInfo -sourceFromDestination $meshPlug`;
+			string $toks2[];
+			tokenize($meshSource, ".", $toks2);
+			button -e -c ("PRTVolumeRenamePRTVolume(\"" + $toks[0] + "\");") PRTVolumeRenameButton;
+			button -e -enable true PRTVolumeRenameButton;
+			
+			string $parents[] = `listRelatives -parent $toks2[0]`;
+			string $parents2[] = `listRelatives -parent $attributeName`;
+			
+			string $toks3[];
+			tokenize($parents[0], ":", $toks3);
+			string $newName = $toks3[((`size $toks3`)-1)];
+			
+			button -e -label ("RENAME PRTVolume to [PRTVolume_"+ $newName +"]") PRTVolumeRenameButton;
+		}
+	}	
+}
+
+global proc PRTVolumeToggleBoundingBox (string $attributeName)
+{
+
+	string $meshPlug = $attributeName+".inMesh";
+	string $meshSource = `connectionInfo -sourceFromDestination $meshPlug`;
+	string $toks2[];
+	tokenize($meshSource, ".", $toks2);
+	
+	int $oldLOD = `getAttr ($toks2[0]+".overrideLevelOfDetail")`;
+	if ($oldLOD) 
+	{
+		$oldLOD = 0;
+	}
+	else
+	{
+		$oldLOD = 1;
+	}
+	setAttr ($toks2[0]+".overrideEnabled") $oldLOD;
+	setAttr ($toks2[0]+".overrideLevelOfDetail") $oldLOD;
+}
+
+global proc PRTVolumeDisableBoundingBox (string $attributeName)
+{
+	string $meshPlug = $attributeName+".inMesh";
+	string $meshSource = `connectionInfo -sourceFromDestination $meshPlug`;
+	string $toks2[];
+	tokenize($meshSource, ".", $toks2);
+	setAttr ($toks2[0]+".overrideEnabled") 0;
+	setAttr ($toks2[0]+".overrideLevelOfDetail") 0;
+}
+
+
+// builds the buttons into the UI
+global proc PRTVolumeMakeConnectMeshButton (string $attributeName)
+{
+	setUITemplate -pst attributeEditorTemplate;
+		button PRTVolumeConnectMeshButton;
+	setUITemplate -ppt;
+		
+	PRTVolumeUpdateConnectMeshButton($attributeName);
+}
+
+// Every time we switch nodes, we have to re-set the button callback commands to reflect the new node name
+global proc PRTVolumeUpdateConnectMeshButton (string $attributeName)
+{
+	global int $PRTVolumeConnectionChangedScriptJobNumber;
+	global int $PRTVolumeConnectionChangedScriptJobCreated = false;
+	
+	if ($PRTVolumeConnectionChangedScriptJobCreated)
+	{
+		scriptJob -kill $PRTVolumeConnectionChangedScriptJobNumber;
+	}
+	
+	$PRTVolumeConnectionChangedScriptJobNumber = `scriptJob -connectionChange $attributeName ("PRTVolumeUpdateMeshConnectivityOnConnectMeshButtonAll(\"" + $attributeName + "\");")`;
+	$PRTVolumeConnectionChangedScriptJobCreated = true;
+	
+	PRTVolumeUpdateMeshConnectivityOnConnectMeshButton($attributeName);
+}
+
+global proc PRTVolumeUpdateMeshConnectivityOnConnectMeshButtonAll(string $attributeName)
+{
+	PRTVolumeUpdateMeshConnectivityOnConnectMeshButton($attributeName);
+	PRTVolumeUpdateAlignTransformButton($attributeName);
+	PRTVolumeUpdateBoundingBoxButton($attributeName);
+	PRTVolumeUpdateRenameButton($attributeName);
+	PRTVolumeUpdateAdaptiveSpacingButton($attributeName);
+}
+
+global proc PRTVolumeUpdateMeshConnectivityOnConnectMeshButton(string $attributeName)
+{
+	if (`objExists $attributeName`)
+	{
+		int $isConnected = `connectionInfo -id $attributeName`;
+
+		string $toks[];
+		tokenize($attributeName, ".", $toks);
+		if (!$isConnected)
+		{
+			button -e -c ("PRTVolumeBeginSelection(\"" + $toks[0] + "\");") PRTVolumeConnectMeshButton;
+			button -e -label "Attach PRTVolume Mesh" PRTVolumeConnectMeshButton;
+		}
+		else
+		{
+			string $meshPlug = ($toks[0] + ".inMesh");
+			string $meshSource = `connectionInfo -sourceFromDestination $meshPlug`;
+			string $toks2[];
+			tokenize($meshSource, ".", $toks2);
+			button -e -c ("PRTVolumeDetatchSelectedMesh(\"" + $toks[0] + "\");") PRTVolumeConnectMeshButton;
+			button -e -label ("Detatch PRTVolume Mesh ["+$toks2[0]+"]") PRTVolumeConnectMeshButton;
+		}
+	}
+}
+
+global proc PRTVolumeAutoDeleteSelection()
+{
+	if ( `contextInfo -ex "PRTVolumeSelectionContext"` )
+	{
+		deleteUI PRTVolumeSelectionContext;
+	}
+}
+
+global proc PRTVolumeBeginSelection(string $rootNodeName)
+{
+	select -r $rootNodeName;
+	PRTVolumeAutoDeleteSelection();
+	
+	scriptCtx 
+		-title "PRTVolume Mesh Select"
+		-totalSelectionSets 1
+		-setSelectionCount 1
+		-setAutoComplete true
+		-setAllowExcessCount true
+		-setNoSelectionPrompt "Please select a mesh to use for this PRT Volume object"
+		-toolFinish "evalDeferred(\"PRTVolumeAutoDeleteSelection();\")"
+		-finalCommandScript ("PRTVolumeAttachSelectedMesh($Selection1, \"" + $rootNodeName + "\");")
+		PRTVolumeSelectionContext;
+		
+	setToolTo PRTVolumeSelectionContext;
+}
+
+
+global proc PRTVolumeDetatchSelectedMesh(string $rootNodeName)
+{
+	PRTVolumeDisableBoundingBox($rootNodeName);
+	
+	string $meshPlug = ($rootNodeName + ".inMesh");
+	string $matrixPlug = ($rootNodeName + ".inMeshTransform");
+	
+	string $meshSource = `connectionInfo -sourceFromDestination $meshPlug`;
+	string $matrixSource = `connectionInfo -sourceFromDestination $matrixPlug`;
+
+	disconnectAttr $meshSource $meshPlug;
+	disconnectAttr $matrixSource $matrixPlug;	
+}

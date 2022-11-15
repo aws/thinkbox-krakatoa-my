@@ -1,0 +1,553 @@
+// Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
+////////////////////////////////////////////////////////////
+//KRAKATOA PRT MODIFIER FOR MAYA
+//Started: 2013/01/09
+//Edited: 2013/10/25
+//Code by Borislav "Bobo" Petrov, Conrad Wiebe, and Matthew Yu
+//Thinkbox Software Inc.
+//
+////////////////////////////////////////////////////////////
+
+/////////////////////////////////////////////////////////////////////////////
+// Stream Modifier Functions
+/////////////////////////////////////////////////////////////////////////////
+
+global proc KMYMODED_updateObjectsList ()
+{
+	KMY_wrapMayaParticles();
+
+	//decide which object will be highlighted. if there already exists a highlighted object, re-highlighted it. otherwise take it from the active scene selected object.
+	string $newSelection[] = `textScrollList -q -si lbx_PRTObjects`;
+	if( size($newSelection) == 0 ) {
+		string $baseSelectionObjects[] = `ls -sl`; //returns the tm's, so get the children. should return one child.
+		if( size($baseSelectionObjects) ) {
+			$newSelection = `listRelatives -shapes $baseSelectionObjects[0]`;
+		}		
+	}
+	
+	textScrollList -edit -ra lbx_PRTObjects;
+	string $allObjects[] = `ls -v -typ "PRTFractal" -typ "PRTLoader" -typ "PRTVolume" -typ "PRTSurface" /*-typ "PRTMayaParticle"*/ -typ "particle" -type "nParticle"`;
+	string $anObject;
+	int $newSelectionFound = 0;
+	for ($anObject in $allObjects)
+	{
+		// If a node contains a deformed version, skip it
+		if ( `nodeType $anObject` == "particle" || `nodeType $anObject` == "nParticle" ) {
+			string $isDeformed = `KMY_mayaParticleGetDeformed $anObject`;
+			if ( $isDeformed != "" ) continue;
+		}
+
+		textScrollList -edit -append $anObject lbx_PRTObjects;
+		if( size($newSelection) && $anObject == $newSelection[0] )
+			$newSelectionFound = 1;
+	}
+	int $numberItems = `textScrollList -q -ni lbx_PRTObjects`;
+	if ($numberItems > 0 )
+	{
+		if ($newSelectionFound)
+			textScrollList -e -si $newSelection[0] lbx_PRTObjects;
+		else
+			textScrollList -e -sii 1 lbx_PRTObjects;
+	}
+	KMYMODED_updateModifiersList();
+	KMYMODED_selectCurrentObject();
+}
+
+global proc KMYMODED_selectCurrentObject ()
+{
+	string $selectedItem = `KMYMODED_getSelectedObject`;
+	if ( $selectedItem != "" ) 
+	{ 
+		select -r $selectedItem;
+	}
+}
+
+global proc KMYMODED_selectCurrentModifier ()
+{
+	KMYMODED_selectCurrentObject();
+	refreshAE;
+
+	string $prtmod = `KMYMODED_getSelectedModifier`;
+	if ($prtmod != "" ) {
+
+		global string $gAETabLayoutName;
+		string $tabs[] = `tabLayout -q -tabLabelIndex $gAETabLayoutName`;
+		for ( $i = 0;  $i < size($tabs); $i++ ) {
+			if ( $tabs[$i] == $prtmod ) {
+				tabLayout -e -selectTabIndex ($i+1) $gAETabLayoutName;
+				AEbuildControls;
+				break;
+			}
+		}
+
+		if ( $i >= size ( $tabs ) ) {
+			// Not found in tab.
+		}
+	}
+}
+
+global proc KMYMODED_toggleModifierOnOff ()
+{
+	string $prtmod = `KMYMODED_getSelectedModifier`;
+	if ($prtmod != "" ) {
+		int $intValue = `getAttr ($prtmod + "." + "inEnabled")`;
+		if ($intValue) 
+		{
+			setAttr ($prtmod + "." + "inEnabled") 0;
+		}
+		else
+		{
+			setAttr ($prtmod + "." + "inEnabled") 1;
+		}
+	}
+}
+
+global proc string KMYMODED_getDisplayNameFromModifiers ( string $prtmod ) 
+{
+	string $modDescriptionString = "";
+
+	string $onString = "+";
+
+	string $type = `nodeType $prtmod`;
+	if ( $type == "PRTModifier" )
+	{
+		int $enabled = `getAttr ($prtmod + "." + "inEnabled")`;
+		if ( !$enabled ) $onString = "--";
+
+		string $modType = `getAttr ($prtmod + "." + "inModifiersMethod")`;
+		string $nameString = `getAttr ($prtmod + "." + "inModifiersName")`;
+		if ( $nameString == "" ) $nameString = "<unnamed>";
+		
+		$modDescriptionString = $modDescriptionString + ($nameString+", ");
+
+		if ($modType == "Apply Texture")
+		{
+			string $strValue = `getAttr ($prtmod + "." + "KMod_Channel_Name")`;
+			$modDescriptionString = $modDescriptionString + " Ch:["+ $strValue +"] ";
+
+			string $textureMap[] = `listConnections ($prtmod + ".KMod_Texture")`;
+			if (size($textureMap) > 0) {
+				$modDescriptionString = $modDescriptionString + " M:["+ $textureMap[0] +"] ";
+			} else {
+				float $float[] = `getAttr ($prtmod + "." + "KMod_Texture")`;
+				$modDescriptionString = $modDescriptionString + " V:["+ KMYMODED_round($float[0]) + "," + KMYMODED_round($float[1]) + ","+ KMYMODED_round($float[2]) +"] ";
+			}
+
+			$strValue = `getAttr ($prtmod + "." + "KMod_UVW_Channel_Name")`;
+			$modDescriptionString = $modDescriptionString + " UVW:["+ $strValue +"] ";
+			
+			int $intValue = `getAttr ($prtmod + "." + "KMod_Evaluate_In_Viewport")`;
+			if ($intValue) $modDescriptionString = $modDescriptionString + " In Viewport";				
+		}
+
+		else if ($modType == "Set Vector Channel")
+		{
+			string $strValue = `getAttr ($prtmod + "." + "KMod_Channel_Name")`;
+			$modDescriptionString = $modDescriptionString + " Ch:["+ $strValue +"] ";
+
+			float $float[] = `getAttr ($prtmod + "." + "KMod_Channel_Value")`;
+			$modDescriptionString = $modDescriptionString + " V:["+ KMYMODED_round($float[0]) + "," + KMYMODED_round($float[1]) + ","+ KMYMODED_round($float[2]) +"] ";
+		}
+
+		else if ($modType == "Set Float Channel")
+		{
+			string $strValue = `getAttr ($prtmod + "." + "KMod_Channel_Name")`;
+			$modDescriptionString = $modDescriptionString + " Ch:["+ $strValue +"] ";
+			
+			float $float = `getAttr ($prtmod + "." + "KMod_Channel_Value")`;
+			$modDescriptionString = $modDescriptionString + " V:["+ KMYMODED_round($float) +"] ";
+		}
+
+		else if ($modType == "Scale Channel")
+		{
+			string $strValue = `getAttr ($prtmod + "." + "KMod_Channel_Name")`;
+			$modDescriptionString = $modDescriptionString + " Ch:["+ $strValue +"] ";
+
+			float $float = `getAttr ($prtmod + "." + "KMod_Channel_Scale")`;
+			$modDescriptionString = $modDescriptionString + " V:["+ KMYMODED_round($float) +"] ";
+		}
+
+		else if ($modType == "Copy Channel")
+		{
+			string $strValue = `getAttr ($prtmod + "." + "KMod_Source_Channel")`;
+			$modDescriptionString = $modDescriptionString + " From:["+ $strValue +"] ";
+
+			$strValue = `getAttr ($prtmod + "." + "KMod_Destination_Channel")`;
+			$modDescriptionString = $modDescriptionString + " To:["+ $strValue +"] ";
+				
+			int $intValue = `getAttr ($prtmod + "." + "KMod_Copy_as_Vector_Length")`;
+			if ($intValue) $modDescriptionString = $modDescriptionString + " As Vector Length";
+		}
+
+		else if ($modType == "Repopulate Particles")
+		{
+			float $floatValue = `getAttr ($prtmod +"." + "KMod_Fill_Radius")`;
+			$modDescriptionString = $modDescriptionString + " Rad:["+ KMYMODED_round($floatValue) +"] ";
+
+			int $intValue = `getAttr ($prtmod + "." + "KMod_Fill_Radius_Subdivs")`;
+			$modDescriptionString = $modDescriptionString + " SubD:["+ $intValue +"] ";
+
+			$intValue = `getAttr ($prtmod + "." + "KMod_Particles_Per_Subdiv")`;
+			$modDescriptionString = $modDescriptionString + " Parts:["+ $intValue +"] ";
+				
+			$floatValue = `getAttr ($prtmod + "." + "KMod_Density_Falloff")`;
+			$modDescriptionString = $modDescriptionString + " Falloff:["+ KMYMODED_round($floatValue) +"] ";
+				
+			$intValue = `getAttr ($prtmod + "." + "KMod_Random_Seed")`;
+			$modDescriptionString = $modDescriptionString + " Seed:["+ $intValue +"] ";
+				
+			$intValue = `getAttr ($prtmod + "." + "KMod_Evaluate_In_Viewport")`;
+			if ($intValue) $modDescriptionString = $modDescriptionString + " In Viewport";
+		}
+
+		else /* Does Nothing / Invalid */
+		{
+			$modDescriptionString = $modDescriptionString + "Nothing";
+		}
+	}
+
+	else if ( $type == "PRTMagma" )
+	{	
+		int $enabled = `getAttr ($prtmod + "." + "inEnabled")`;
+		if ( !$enabled ) $onString = "--";
+		$modDescriptionString = $modDescriptionString + "Magma";
+	}
+
+	return ($onString + " " + $prtmod + " " + $modDescriptionString);
+}
+
+global proc string KMYMODED_getModifiersFromDisplayName ( string $prtmoddisplay )
+{
+	string $breakup[];
+	tokenize $prtmoddisplay " " $breakup;
+	return $breakup[1];
+}
+
+global proc float KMYMODED_round( float $inFloat ) {
+	//utility function for UI to show nice-looking floats. display them the same way maya does.
+	int $newFloatAsInt = ($inFloat + 0.0005) * 1000;
+	float $newFloat = $newFloatAsInt / 1000.0;
+	return $newFloat;
+}
+
+global proc string KMYMODED_getSelectedModifier ()
+{
+	string $display = `KMYMODED_getSelectedModifierDisplayName`;
+	if ( $display != "") 
+		$display = `KMYMODED_getModifiersFromDisplayName $display`;
+	return $display;
+}
+
+global proc string KMYMODED_getSelectedModifierDisplayName ()
+{
+	string $selectedItemMultiSelect[] = `textScrollList -q -si lbx_KMods`;
+	if ( `size $selectedItemMultiSelect` > 0) {
+		return $selectedItemMultiSelect[0];
+	}
+	return "";
+}
+
+global proc string KMYMODED_getModifierAtPosition ( int $index )
+{
+	string $elements[] = `textScrollList -q -ai lbx_KMods`;
+	string $display = $elements[$index];
+	string $node = `KMYMODED_getModifiersFromDisplayName $display`;
+	return $node;
+}
+
+global proc string KMYMODED_getSelectedObject()
+{
+	string $selectedItemMultSelect[] = `textScrollList -q -si lbx_PRTObjects`;
+	if (size($selectedItemMultSelect) > 0) 
+	{ 
+		string $selected = $selectedItemMultSelect[0];
+		if ( `nodeType $selected` == "particle" || `nodeType $selected` == "nParticle" )
+			return `KMY_getPRTMayaParticleFromMayaParticle $selected false`;
+		return $selected;
+	}
+	return "";
+}
+
+global proc KMYMODED_updateModifiersList ()
+{
+	if( `window -exists KMYModEditorWindow` == false )
+		return;
+
+	//save the current selection index
+	int $newIndex[] = `textScrollList -q -sii lbx_KMods`;
+	int $prevModCount = size(`textScrollList -q -ai lbx_KMods`);
+	
+	//clear the list
+	textScrollList -edit -ra lbx_KMods;
+	
+	string $selectedItem = `KMYMODED_getSelectedObject`;
+	if ( $selectedItem != "" ) { //a prt object must exist to repopulate
+
+		string $current = `KMYMOD_getNextStreamModifier $selectedItem`;
+		int $modCount = 0;
+		while ( $current != "" )
+		{
+			string $currentDisplay = `KMYMODED_getDisplayNameFromModifiers $current`;
+			textScrollList -edit -append $currentDisplay lbx_KMods;
+			$current = `KMYMOD_getNextStreamModifier $current`;
+			$modCount++;
+		}
+
+		if ($modCount > 0)
+		{
+			if ($modCount <= $prevModCount && size($newIndex) && $newIndex[0] < $modCount)
+				textScrollList -e -sii $newIndex[0] lbx_KMods; //reselect old selection
+			else
+				textScrollList -e -sii $modCount lbx_KMods; //if a modifier was added, select the latest addition
+		}
+	}
+}
+
+//returns the last modifier in the list, or the base object if no modifiers.
+global proc string KMYMODED_getObjectToConnectModifierTo( string $baseObject ) {
+	if ( `nodeType $baseObject` == "particle" || `nodeType $baseObject` == "nParticle" ) {
+		// Make sure maya particles are wrapped and we're using the deformed version
+		KMY_wrapMayaParticles();
+		$baseObject = KMY_getPRTMayaParticleFromMayaParticle( $baseObject, true );
+	}
+
+	// Iterate through the list
+	string $last = `MKYMOD_getLastModifier $baseObject`;
+	return $last;
+}
+
+global proc KMYMODED_addMagmaMod()
+{
+	string $baseObject = KMYMODED_getSelectedObject();
+	string $objectToConnect = KMYMODED_getObjectToConnectModifierTo( $baseObject );
+	KMYMOD_addMagmaMod( $objectToConnect );
+}
+
+global proc KMYMODED_addApplyTextureMod()
+{
+	string $baseObject = KMYMODED_getSelectedObject();
+	string $objectToConnect = KMYMODED_getObjectToConnectModifierTo( $baseObject );
+	KMYMOD_addApplyTextureMod( $objectToConnect );
+}
+
+global proc KMYMODED_addSetFloat3ChannelMod()
+{
+	string $baseObject = KMYMODED_getSelectedObject();
+	string $objectToConnect = KMYMODED_getObjectToConnectModifierTo( $baseObject );
+	KMYMOD_addSetFloat3ChannelMod( $objectToConnect );
+}
+
+global proc KMYMODED_addSetFloatChannelMod()
+{
+	string $baseObject = KMYMODED_getSelectedObject();
+	string $objectToConnect = KMYMODED_getObjectToConnectModifierTo( $baseObject );
+	KMYMOD_addSetFloatChannelMod( $objectToConnect );
+}
+
+global proc KMYMODED_addScaleChannelMod()
+{
+	string $baseObject = KMYMODED_getSelectedObject();
+	string $objectToConnect = KMYMODED_getObjectToConnectModifierTo( $baseObject );
+	KMYMOD_addScaleChannelMod( $objectToConnect );
+}
+
+global proc KMYMODED_addCopyChannelMod()
+{
+	string $baseObject = KMYMODED_getSelectedObject();
+	string $objectToConnect = KMYMODED_getObjectToConnectModifierTo( $baseObject );
+	KMYMOD_addCopyChannelMod( $objectToConnect );
+}
+
+global proc KMYMODED_addRepopulationParticlesMod()
+{
+	string $baseObject = KMYMODED_getSelectedObject();
+	string $objectToConnect = KMYMODED_getObjectToConnectModifierTo( $baseObject );
+	KMYMOD_addRepopulationParticlesMod( $objectToConnect );
+}
+
+global proc KMYMODED_deleteStreamModifier()
+{
+	string $object = KMYMODED_getSelectedObject();
+	string $selectedItem = `KMYMODED_getSelectedModifier`;
+	if ( $selectedItem != "" ) {
+		KMYMOD_removeStreamModifier $selectedItem true;
+		KMYMODED_updateModifiersList();
+
+		string $selectedObject = `KMYMODED_getSelectedObject`;
+		KMY_forceObjectReevaluate( $selectedObject );
+	}
+}
+
+global proc KMYMODED_editStreamModifier()
+{
+	KMYMODED_selectCurrentModifier();
+	string $selectedItem = `KMYMODED_getSelectedModifier`;
+	if ( $selectedItem != "" ) {
+		string $type = `nodeType $selectedItem`;
+		if ( $type == "PRTMagma" )
+		{
+			OpenMagmaFLUXDialog $selectedItem;
+		}
+	}
+}
+
+global proc KMYMODED_moveTo ( string $direction )
+{
+	string $selectedObject = `KMYMODED_getSelectedObject`;
+	string $selectedItem = `KMYMODED_getSelectedModifier`;
+	string $selectedItemDisplay = `KMYMODED_getSelectedModifierDisplayName`;
+	if ( $selectedItem != "" ) {
+
+		if ($direction == "top")
+		{
+			string $first = `KMYMODED_getModifierAtPosition 0`;
+			if ( $first != $selectedItem ) {
+				KMYMOD_removeStreamModifier $selectedItem false;
+				KMYMOD_insertStreamModifier $selectedItem $first -1;
+
+				KMYMODED_updateModifiersList();
+				KMY_forceObjectReevaluate( $selectedObject );
+				textScrollList -e -si $selectedItemDisplay lbx_KMods;
+			}
+		}
+		else if ($direction == "end")
+		{
+			int $count = `textScrollList -q -ni lbx_KMods`;
+			string $last = `KMYMODED_getModifierAtPosition ($count - 1)`;
+			if ( $last != $selectedItem ) {
+				KMYMOD_removeStreamModifier $selectedItem false;
+				KMYMOD_insertStreamModifier $selectedItem $last 1;
+
+				KMYMODED_updateModifiersList();
+				KMY_forceObjectReevaluate( $selectedObject );
+				textScrollList -e -si $selectedItemDisplay lbx_KMods;
+			}
+		}
+		else if ($direction == "up")
+		{
+			string $prev = `KMYMOD_getPreviousStreamModifier $selectedItem true`;
+			if ( $prev != "" ) {
+				KMYMOD_removeStreamModifier $selectedItem false;
+				KMYMOD_insertStreamModifier $selectedItem $prev -1;
+
+				KMYMODED_updateModifiersList();
+				KMY_forceObjectReevaluate( $selectedObject );
+				textScrollList -e -si $selectedItemDisplay lbx_KMods;
+			}
+		}
+		else if ($direction == "down")
+		{
+			string $next = `KMYMOD_getNextStreamModifier $selectedItem`;
+			if ( $next != "" ) {
+				KMYMOD_removeStreamModifier $selectedItem false;
+				KMYMOD_insertStreamModifier $selectedItem $next 1;
+
+				KMYMODED_updateModifiersList();
+				KMY_forceObjectReevaluate( $selectedObject );
+				textScrollList -e -si $selectedItemDisplay lbx_KMods;
+			}
+		}
+	}
+}
+
+//THIS IS THE MAIN GUI
+global proc KMYMODED_CreateKMYModEditorDialog ()
+{
+	if ((`window -exists KMYModEditorWindow`) == true) deleteUI KMYModEditorWindow;
+	
+	global string $KMYModEditorWindow;
+	$KMYModEditorWindow = `window -w 460 -h 600 -t "Krakatoa Modifier Editor" KMYModEditorWindow`;
+	columnLayout -adjustableColumn true;
+	
+	gridLayout -numberOfColumns 1 -cellWidthHeight 460 30;
+		button -label "UPDATE Particle Sources List" btn_updateParticleSourcesList;
+	setParent ..;
+	gridLayout -numberOfColumns 1 -cellWidthHeight 460 200;
+		textScrollList -numberOfRows 15 -allowMultiSelection false lbx_PRTObjects;	
+	setParent ..;
+	
+	gridLayout -numberOfColumns 1 -cellWidthHeight 460 30;
+		button -label "+Add Magma" btn_addStreamKMagma;
+	setParent ..;
+	gridLayout -numberOfColumns 2 -cellWidthHeight 230 30;
+		button -label "+Repopulate Particles" btn_addRepopulateParticlesMod;
+		button -label "+Apply Texture" btn_addApplyTextureMod;
+		button -label "+Copy Channel" btn_addCopyChannelMod;
+		button -label "+Scale Channel" btn_addScaleChannelMod;
+		button -label "+Set Float Channel" btn_addSetFloatChannelMod;
+		button -label "+Set Vector Channel" btn_addSetFloat3ChannelMod;
+	setParent ..;
+
+	gridLayout -numberOfColumns 1 -cellWidthHeight 460 200;
+		textScrollList -numberOfRows 15 -allowMultiSelection false lbx_KMods;	
+	setParent ..;	
+	
+	gridLayout -numberOfColumns 4 -cellWidthHeight 115 30;
+		button -label "Move UP" btn_moveModUp;
+		button -label "Move DOWN" btn_moveModDown;
+		button -label "Move To TOP" btn_moveModTop;
+		button -label "Move To BOTTOM" btn_moveModEnd;
+	setParent ..;
+
+	gridLayout -numberOfColumns 1 -cellWidthHeight 460 5;
+		text -label "" -visible false txt_void1;
+	setParent ..;
+	gridLayout -numberOfColumns 1 -cellWidthHeight 460 30;
+		button -label "EDIT Modifier" btn_editMod;
+	setParent ..;
+	gridLayout -numberOfColumns 1 -cellWidthHeight 460 20;
+		text -label "Double-click a Modifier on the above list to TOGGLE On/Off" -visible true txt_infoLabel2;
+	setParent ..;	
+	gridLayout -numberOfColumns 1 -cellWidthHeight 460 30;
+		button -label "DELETE Modifier" btn_deleteMod;
+	setParent ..;
+
+	
+
+//EVENT HANDLERS
+
+	button -e -command ("KMYMODED_updateObjectsList()") btn_updateParticleSourcesList;
+	textScrollList -edit -sc ("KMYMODED_updateModifiersList();KMYMODED_selectCurrentObject()") lbx_PRTObjects;
+	textScrollList -edit -sc ("KMYMODED_selectCurrentModifier()") lbx_KMods;
+	textScrollList -edit -dcc ("KMYMODED_toggleModifierOnOff()") lbx_KMods;
+	
+	button -e -command (";KMYMODED_addApplyTextureMod();          KMYMODED_selectCurrentModifier();") btn_addApplyTextureMod;
+	button -e -command (";KMYMODED_addSetFloat3ChannelMod();      KMYMODED_selectCurrentModifier();") btn_addSetFloat3ChannelMod;
+	button -e -command (";KMYMODED_addSetFloatChannelMod();       KMYMODED_selectCurrentModifier();") btn_addSetFloatChannelMod;
+	button -e -command (";KMYMODED_addScaleChannelMod();          KMYMODED_selectCurrentModifier();") btn_addScaleChannelMod;
+	button -e -command (";KMYMODED_addCopyChannelMod();           KMYMODED_selectCurrentModifier();") btn_addCopyChannelMod;
+	button -e -command (";KMYMODED_addRepopulationParticlesMod(); KMYMODED_selectCurrentModifier();") btn_addRepopulateParticlesMod;
+	button -e -command (";KMYMODED_addMagmaMod();                 KMYMODED_selectCurrentModifier();") btn_addStreamKMagma;
+	
+	float $version = `getApplicationVersionAsFloat`;
+	if( $version <= 2011 ) {
+		// Disable magma support
+		button -e -label ("+Add Magma (not supported for " + $version + ")") btn_addStreamKMagma;
+		button -e -enable false btn_addStreamKMagma;
+	}
+
+	button -e -command ("KMYMODED_deleteStreamModifier()") btn_deleteMod;
+
+	button -e -command ("KMYMODED_editStreamModifier()") btn_editMod;
+	
+	button -e -c ("KMYMODED_moveTo( \"top\" )") btn_moveModTop ;
+	button -e -c ("KMYMODED_moveTo( \"end\" )") btn_moveModEnd ;
+	button -e -c ("KMYMODED_moveTo( \"up\" )") btn_moveModUp ;
+	button -e -c ("KMYMODED_moveTo( \"down\" )") btn_moveModDown ;
+
+//SHOW DIALOG
+	showWindow KMYModEditorWindow;
+}
+
+global proc KMYMODED_displayKMYModEditorDialog()
+{
+	//migration code
+	KMY_wrapMayaParticles();
+	PRTMOD_ConvertAllDeprecatedModifiers();
+
+	KMYMODED_CreateKMYModEditorDialog();
+	KMYMODED_updateObjectsList();
+
+	window -edit -h 100 KMYModEditorWindow;
+}

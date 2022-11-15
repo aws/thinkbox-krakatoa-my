@@ -1,0 +1,2027 @@
+// Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
+////////////////////////////////////////////////////////////
+//KRAKATOA MY RENDERER FUNCTIONS
+//Started: 2011/09/19
+//Edited: 2014/01/17
+//Code by Borislav "Bobo" Petrov, Conrad Wiebe, Matthew Yu
+//Thinkbox Software Inc.
+//Additional code by David Lin, IndyZone Co., LTD, Bryan Ewert
+////////////////////////////////////////////////////////////
+//This implements the Krakatoa Settings tab of the Maya Render Settings window
+////////////////////////////////////////////////////////////
+
+// This is the name of the universal settings node which contains all of the
+// scene's render settings
+global proc string GetKrakatoaSettingsNodeName()
+{
+	return "MayaKrakatoaRenderSettings";
+}
+
+// This method is used to create a new settings node into the scene, if one does not already exist, and then attatch all 
+// required settings onto that node
+global proc string CreateKrakatoaSettingsNode()
+{	
+	KMY_wrapMayaParticles();
+	
+	string $settingsNodeName = `GetKrakatoaSettingsNodeName`;
+	
+	if (!`objExists($settingsNodeName)`)
+	{
+		// supposedly shared is supposed to prevent the node from being created more than once, however this does not seem to be the case...
+		createNode -shared -ss -n $settingsNodeName "KrakatoaRenderSettingsNode";
+		
+		// make sure we haven't already registered this node to the renderer first
+		string $currentGlobalNodes[] = `renderer -q -globalsNodes MayaKrakatoa`;
+		if (!stringArrayContains($settingsNodeName, $currentGlobalNodes))
+			renderer -edit -addGlobalsNode $settingsNodeName MayaKrakatoa;
+	}
+	
+	// ensure that the scene is up to datea and has no out of date items.
+	KMY_convertOldKrakatoaSettingsNode($settingsNodeName);
+	PRTMOD_ConvertAllDeprecatedModifiers();
+
+	return $settingsNodeName;
+}
+
+// This is a utility method to build a 'node.attribute' string for the Krakatoa settings node
+global proc string KrakatoaSettingsAttributeName(string $attribute)
+{
+	return (`GetKrakatoaSettingsNodeName` + "." + $attribute);
+}
+
+// These are the methods you want to use to save the settings.
+// They are mostly trivial, they exist just to encapsulate the rest of the code from the
+// underlying means of storing these attributes
+
+global proc string GetKrakatoaStringRenderSetting (string $name)
+{
+	if (!attributeExists($name, `GetKrakatoaSettingsNodeName`))
+	{
+		return "";
+	}
+
+	string $attribute = `KrakatoaSettingsAttributeName $name`;
+	string $result = `getAttr -asString $attribute`;
+	return $result;
+}
+
+global proc int GetKrakatoaIntRenderSetting (string $name)
+{
+	if (!attributeExists($name, `GetKrakatoaSettingsNodeName`))
+	{
+		return 0;
+	}
+	
+	string $attribute = `KrakatoaSettingsAttributeName $name`;
+	int $result = `getAttr $attribute`;
+	return $result;
+}
+
+global proc float GetKrakatoaFloatRenderSetting (string $name)
+{
+	if (!attributeExists($name, `GetKrakatoaSettingsNodeName`))
+	{
+		return 0.0;
+	}
+	
+	string $attribute = `KrakatoaSettingsAttributeName $name`;
+	float $result = `getAttr $attribute`;
+	return $result;
+}
+
+global proc float[] GetKrakatoaColorRenderSetting(string $name)
+{
+	if (!attributeExists($name, `GetKrakatoaSettingsNodeName`))
+	{
+		return { 0.0, 0.0, 0.0 };
+	}
+	
+	string $attribute = `KrakatoaSettingsAttributeName $name`;
+	float $result[] = `getAttr $attribute`;
+	return $result;
+}
+
+//USEFUL FUNCTIONS
+
+//Ages ago we switched to defining our MayaKrakatoaRenderSettings attributes in C++
+//The reason this is done is because the loading/saving presets required we define the attribute at plugin load time in the C++, and not in script.
+//This has presented a problem: Now, when a scene was made with an old version of the MayaKrakatoaRenderSettings node, it will lack new attributes, and will not load the UI or render.
+//Thus, we need a conversion function such as this. It's a total pain, but I guess all new attributes must be added both to the C++, and here.
+global proc KMY_convertOldKrakatoaSettingsNode( string $node ) 
+{
+	if (`attributeExists "clr_BGOverride" $node`)
+	{
+		if(!`attributeExists "backgroundColor" $node`){
+			addAttr -longName "backgroundColor" -at float3 -usedAsColor $node;
+			addAttr -longName "backgroundColorR" -at "float" -parent "backgroundColor" $node;
+			addAttr -longName "backgroundColorG" -at "float" -parent "backgroundColor" $node;
+			addAttr -longName "backgroundColorB" -at "float" -parent "backgroundColor" $node;
+		}
+		string $attribute = $node +".clr_BGOverride";
+		float $vals[] = `getAttr ($attribute)`;
+		setAttr ($node+".backgroundColor") -type float3 $vals[0] $vals[1] $vals[2];
+		deleteAttr $attribute;
+	}
+	
+	if (`attributeExists "clr_colorOverride" $node`)
+	{
+		if(!`attributeExists "colorChannelOverride" $node`){
+			addAttr -longName "colorChannelOverride" -at float3 -usedAsColor $node;
+			addAttr -longName "colorChannelOverrideR" -at "float" -parent "colorChannelOverride" $node;
+			addAttr -longName "colorChannelOverrideG" -at "float" -parent "colorChannelOverride" $node;
+			addAttr -longName "colorChannelOverrideB" -at "float" -parent "colorChannelOverride" $node;
+		}
+		string $attribute = $node +".clr_colorOverride";
+		float $vals[] = `getAttr ($attribute)`;
+		setAttr ($node+".colorChannelOverride") -type float3 $vals[0] $vals[1] $vals[2];
+		deleteAttr $attribute;
+	}
+
+	if (`attributeExists "clr_emissionOverride" $node`)
+	{
+		if(!`attributeExists "emissionChannelOverride" $node`){
+			addAttr -longName "emissionChannelOverride" -at float3 -usedAsColor $node;
+			addAttr -longName "emissionChannelOverrideR" -at "float" -parent "emissionChannelOverride" $node;
+			addAttr -longName "emissionChannelOverrideG" -at "float" -parent "emissionChannelOverride" $node;
+			addAttr -longName "emissionChannelOverrideB" -at "float" -parent "emissionChannelOverride" $node;
+		}
+		string $attribute = $node +".clr_emissionOverride";
+		float $vals[] = `getAttr ($attribute)`;
+		setAttr ($node+".emissionChannelOverride") -type float3 $vals[0] $vals[1] $vals[2];
+		deleteAttr $attribute;
+	}
+
+	if (`attributeExists "clr_absorptionOverride" $node`)
+	{
+		if(!`attributeExists "absorptionChannelOverride" $node`){
+			addAttr -longName "absorptionChannelOverride" -at float3 -usedAsColor $node;
+			addAttr -longName "absorptionChannelOverrideR" -at "float" -parent "absorptionChannelOverride" $node;
+			addAttr -longName "absorptionChannelOverrideG" -at "float" -parent "absorptionChannelOverride" $node;
+			addAttr -longName "absorptionChannelOverrideB" -at "float" -parent "absorptionChannelOverride" $node;
+		}
+		string $attribute = $node +".clr_absorptionOverride";
+		float $vals[] = `getAttr ($attribute)`;
+		setAttr ($node+".absorptionChannelOverride") -type float3 $vals[0] $vals[1] $vals[2];
+		deleteAttr $attribute;
+	}
+	
+	if( !`attributeExists "overrideDensity" $node`)
+		addAttr -longName "overrideDensity" -at bool -defaultValue 0 $node;
+	if( !`attributeExists "densityChannelOverride" $node`)
+		addAttr -longName "densityChannelOverride" -at "float" -defaultValue 1 $node;
+	if( !`attributeExists "loadPercentage" $node`)
+		addAttr -longName "loadPercentage" -at "float" -defaultValue 100 $node;
+	if( !`attributeExists "disableCameraBlur" $node`)
+		addAttr -longName "disableCameraBlur" -at bool -defaultValue 0 $node;
+	if( !`attributeExists "motionBlurBias" $node`)
+		addAttr -longName "motionBlurBias" -at "float" -defaultValue 0 $node;
+	if( !`attributeExists "exrCompressionType" $node`)
+		addAttr -longName "exrCompressionType" -at long -defaultValue 2 $node;
+	if( !`attributeExists "exrRgbaBitDepth" $node`)
+		addAttr -longName "exrRgbaBitDepth" -at long -defaultValue 1 $node;
+	if( !`attributeExists "exrNormalBitDepth" $node`)
+		addAttr -longName "exrNormalBitDepth" -at long -defaultValue 1 $node;
+	if( !`attributeExists "exrVelocityBitDepth" $node`)
+		addAttr -longName "exrVelocityBitDepth" -at long -defaultValue 1 $node;
+	if( !`attributeExists "exrZBitDepth" $node`)
+		addAttr -longName "exrZBitDepth" -at long -defaultValue 2 $node;
+	if( !`attributeExists "exrOccludedBitDepth" $node`)
+		addAttr -longName "exrOccludedBitDepth" -at long -defaultValue 1 $node;
+		
+}
+
+// Needed for auto-connecting PRT Volumes.
+global proc PRTVolumeAutoAttachSelectedMesh(string $selectedNode, string $rootNodeName)
+{
+	if ( `objExists $selectedNode` )
+	{
+		string $selectedNodes[] = {$selectedNode};
+		
+		if (PRTVolumeAttachSelectedMesh($selectedNodes, $rootNodeName))
+		{
+			PRTVolumeAlignToMeshTransform($rootNodeName);
+			PRTVolumeRenamePRTVolume($rootNodeName);
+		}
+	}
+}
+
+global proc string AttachSelectedMesh(string $selectedNodes[])
+{
+	string $targetNode = "";
+		
+	// This is a work-around for a funky bug that comes up when two objects are intertwined and cannot be selected seperately
+	// Basically, its possible that you'll inadvertently always select two nodes, and this just assumes that if there is a 
+	// mesh somewhere in there, its the one you wanted
+	string $selectedNode;
+	for ($selectedNode in $selectedNodes)
+	{
+		if (`nodeType $selectedNode` == "transform")
+		{
+			string $relative;
+			string $relatives[] = `listRelatives -fullPath -children $selectedNode`;
+			for ($relative in $relatives)
+			{
+				if (`nodeType $relative` == "mesh")
+				{
+					$targetNode = $relative;
+					break;
+				}
+			}
+		}
+		else if (`nodeType $selectedNode` == "mesh")
+		{
+			$targetNode = $selectedNode;
+		}
+		
+		if ($targetNode != "")
+		{
+			break;
+		}
+	}
+
+	return $targetNode;
+}
+
+global proc int PRTVolumeAttachSelectedMesh(string $selectedNodes[], string $rootNodeName)
+{
+	string $targetNode = `AttachSelectedMesh $selectedNodes`;
+
+	if ($targetNode == "")
+	{
+		warning "Cannot assign mesh: no suitable mesh was found under the current scene selection\n";
+		return 0;
+	}
+	else
+	{
+		PRTVolumeAdaptiveViewportSpacing ($targetNode, $rootNodeName);
+	
+		print ("Connecting " + ($targetNode + ".outMesh") + " to " + ($rootNodeName + ".inMesh"));
+		connectAttr ($targetNode + ".outMesh") ($rootNodeName + ".inMesh");
+		connectAttr ($targetNode + ".worldMatrix") ($rootNodeName + ".inMeshTransform");
+		select -r $rootNodeName;
+		return 1;
+	}
+	
+	return 0;
+}
+
+// Needed for auto-connecting PRT Surfaces.
+global proc PRTSurfaceAutoAttachSelectedMesh(string $selectedNode, string $rootNodeName)
+{
+	if ( `objExists $selectedNode` )
+	{
+		string $selectedNodes[] = {$selectedNode};
+		
+		if (PRTSurfaceAttachSelectedMesh($selectedNodes, $rootNodeName))
+		{
+			PRTSurfaceAlignToMeshTransform($rootNodeName);
+			PRTSurfaceRenamePRTSurface($rootNodeName);
+		}
+	}
+}
+
+global proc int PRTSurfaceAttachSelectedMesh(string $selectedNodes[], string $rootNodeName)
+{
+	string $targetNode = `AttachSelectedMesh $selectedNodes`;
+
+	if ($targetNode == "")
+	{
+		warning "Cannot assign mesh: no suitable mesh was found under the current scene selection\n";
+		return 0;
+	}
+	else
+	{
+		print ("Connecting " + ($targetNode + ".outMesh") + " to " + ($rootNodeName + ".inMesh"));
+		connectAttr ($targetNode + ".outMesh") ($rootNodeName + ".inMesh");
+		connectAttr ($targetNode + ".worldMatrix") ($rootNodeName + ".inMeshTransform");
+		select -r $rootNodeName;
+		return 1;
+	}
+	
+	return 0;
+}
+
+//TAGS THE SELECTED OBJECTS AS MATTE.
+global proc KMY_tagSelectedAsMatte ()
+{
+	print "Tagging Selected Objects As Krakatoa Matte Objects (Holdouts)\n";
+	string $sel[] = `ls -sl`;
+	string $anObject;
+	for ($anObject in $sel)
+	{
+		
+		string $childShapeNodes[] = `listRelatives -fullPath -allDescendents $anObject`;
+		
+		string $shapeObject;
+		for ( $shapeObject in $childShapeNodes )
+		{
+			// TODO: support other types of objects such as NURBS
+			if ( `nodeType $shapeObject` == "mesh" )
+			{
+				//Determine if this is the "Original" shape of a deformed node. If it is, it will have the "intermediateObject" attribute set, and we don't want to tag it.
+				if (!`getAttr ($shapeObject + ".intermediateObject")`) {
+			
+					string $attrs[] = eval ("attributeInfo -all " + $shapeObject);
+					int $found = stringArrayContains("KrakatoaMatte", $attrs);
+					if ($found == 0)
+						addAttr -longName "KrakatoaMatte" -shortName "KMatte" -at bool $shapeObject;
+					eval ("setAttr " + $shapeObject+".KrakatoaMatte on;");
+				}
+			}
+		}
+	}
+}
+
+//UNCHECKS THE MATTE ATTRIBUTE (IF ANY) IN THE SELECTED OBJECTS
+global proc KMY_untagSelectedAsMatte ()
+{
+	print "Un-Tagging Selected Matte Objects\n";
+	string $sel[] = `ls -sl`;
+	string $anObject;
+	for ($anObject in $sel)
+	{
+
+		string $childShapeNodes[] = `listRelatives -fullPath -allDescendents $anObject`;
+		string $shapeObject;
+		for ( $shapeObject in $childShapeNodes )
+		{
+			if ( `nodeType $shapeObject` == "mesh" )
+			{
+				string $attrs[] = eval ("attributeInfo -all " + $shapeObject);
+				int $found = stringArrayContains("KrakatoaMatte", $attrs);
+				if ($found == 1)
+					eval ("setAttr " + $shapeObject+".KrakatoaMatte off;");
+			}
+		}
+	}
+}
+
+//THIS FUNCTION SAVES THE SETTINGS AND UPDATES THE CONTROLS DISPLAY
+global proc KMY_setControlsVisibility()
+{
+	string $ddl_renderingMethod = `GetKrakatoaStringRenderSetting "renderingMethod"`;
+	attrControlGrp -edit -enable ($ddl_renderingMethod == "Voxels") flt_voxelSize;
+	attrControlGrp -edit -enable ($ddl_renderingMethod == "Voxels") int_voxelFilterRadius;
+	
+	attrControlGrp -edit -enable ($ddl_renderingMethod != "Voxels") ddl_selfShadowFilter;
+	attrControlGrp -edit -enable ($ddl_renderingMethod != "Voxels") ddl_drawPointFilter;
+
+	int $chk_forceEXROutput = `GetKrakatoaIntRenderSetting "forceEXROutput"`;
+	attrControlGrp -edit -enable ($chk_forceEXROutput) ddl_exrCompressionType;
+	attrControlGrp -edit -enable ($chk_forceEXROutput) ddl_exrRgbaBitDepth;
+
+	int $chk_saveNormalPass = `GetKrakatoaIntRenderSetting "saveNormalPass"`;
+	attrControlGrp -edit -enable ($chk_forceEXROutput && $chk_saveNormalPass) ddl_exrNormalBitDepth;
+
+	int $chk_saveVelocityPass= `GetKrakatoaIntRenderSetting "saveVelocityPass"`;
+	attrControlGrp -edit -enable ($chk_forceEXROutput && $chk_saveVelocityPass) ddl_exrVelocityBitDepth;
+
+	int $chk_saveZDepthPass = `GetKrakatoaIntRenderSetting "saveZDepthPass"`;
+	attrControlGrp -edit -enable ($chk_forceEXROutput && $chk_saveZDepthPass) ddl_exrZBitDepth;
+
+	int $chk_saveOccludedPass = `GetKrakatoaIntRenderSetting "saveOccludedPass"`;
+	attrControlGrp -edit -enable ($chk_forceEXROutput && $chk_saveOccludedPass) ddl_exrOccludedBitDepth;
+
+	int $chk_useLightingPassDensity = `GetKrakatoaIntRenderSetting "useLightingPassDensity"`;
+	attrControlGrp -edit -enable $chk_useLightingPassDensity flt_lightingPassDensity;
+	attrControlGrp -edit -enable $chk_useLightingPassDensity int_lightingPassDensityExponent;
+	
+	int $chk_useEmissionStrength = `GetKrakatoaIntRenderSetting "useEmissionStrength"`;
+	attrControlGrp -edit -enable $chk_useEmissionStrength flt_emissionStrength;
+	attrControlGrp -edit -enable $chk_useEmissionStrength int_emissionStrengthExponent;
+
+	$chk_useEmissionStrength = `GetKrakatoaIntRenderSetting "forceAdditiveMode"`;
+	attrControlGrp -edit -enable ($chk_useEmissionStrength==0) chk_useEmission;
+	attrControlGrp -edit -enable ($chk_useEmissionStrength==0) chk_useAbsorption;
+
+	int $chk_enableMotionBlur = `GetKrakatoaIntRenderSetting "enableMotionBlur"`;
+	int $chk_enableAdaptiveMotionBlur = `GetKrakatoaIntRenderSetting "enableAdaptiveMotionBlur"`;
+	int $onlyRegularMotionBlur = $chk_enableMotionBlur && !$chk_enableAdaptiveMotionBlur;
+	int $regularAndAdaptiveMotionBlur = $chk_enableMotionBlur && $chk_enableAdaptiveMotionBlur;
+
+	attrControlGrp -edit -enable ($onlyRegularMotionBlur) int_motionBlurParticleSegments;
+	attrControlGrp -edit -enable ($chk_enableMotionBlur) chk_jitteredMotionBlur;
+	attrControlGrp -edit -enable ($chk_enableMotionBlur) flt_shutterAngle;
+	attrControlGrp -edit -enable ($chk_enableMotionBlur) flt_motionBlurBias;
+
+	attrControlGrp -edit -enable ($chk_enableMotionBlur) chk_enableAdaptiveMotionBlur;
+
+	attrControlGrp -edit -enable ($regularAndAdaptiveMotionBlur) int_adaptiveMotionBlurMinSamples;
+	attrControlGrp -edit -enable ($regularAndAdaptiveMotionBlur) int_adaptiveMotionBlurMaxSamples;
+	attrControlGrp -edit -enable ($regularAndAdaptiveMotionBlur) flt_adaptiveMotionBlurSmoothness;
+	attrControlGrp -edit -enable ($regularAndAdaptiveMotionBlur) flt_adaptiveMotionBlurExponent;
+	
+	int $chk_enableDOF = `GetKrakatoaIntRenderSetting "enableDOF"`;
+	attrControlGrp -edit -enable ($chk_enableDOF) flt_sampleRateDOF;
+
+	int $chk_enableShapeMap = `GetKrakatoaIntRenderSetting "enableBokehShapeMap"`;
+	int $chk_enableBlendMap = `GetKrakatoaIntRenderSetting "enableBokehBlendMap"`;
+	int $chk_enableAnamorphicSqueeze = `GetKrakatoaIntRenderSetting "enableBokehAnamorphicSqueeze"`;
+
+	attrControlGrp -edit -enable ($chk_enableDOF) chk_enableShapeMap;
+	attrControlGrp -edit -enable ($chk_enableDOF) chk_enableBlendMap;
+	attrControlGrp -edit -enable ($chk_enableDOF) chk_enableAnamorphicSqueeze;
+
+	attrControlGrp -edit -enable ($chk_enableShapeMap && $chk_enableDOF) clr_bokehShapeMap;
+	attrControlGrp -edit -enable ($chk_enableBlendMap && $chk_enableDOF) clr_bokehBlendMap;
+	attrControlGrp -edit -enable ($chk_enableBlendMap && $chk_enableDOF) flt_bokehBlendInfluence;
+	attrControlGrp -edit -enable ($chk_enableBlendMap && $chk_enableDOF) int_bokehBlendMipmapScale;
+	attrControlGrp -edit -enable ($chk_enableBlendMap && $chk_enableDOF) chk_allocateBokehBlendInfluence;
+	attrControlGrp -edit -enable ($chk_enableAnamorphicSqueeze && $chk_enableDOF) flt_bokehAnamorphicSqueeze;
+
+	int $chk_disableCameraBlur = `GetKrakatoaIntRenderSetting "disableCameraBlur"`;
+
+	string $ddl_shadingMode = `GetKrakatoaStringRenderSetting "shadingMode"`;
+
+	frameLayout -edit -vis ($ddl_shadingMode=="Phong Surface") PhongSurfaceShaderLayout;
+	frameLayout -edit -vis ($ddl_shadingMode=="Henyey-Greenstein") HenyeyGreensteinShaderLayout;
+	frameLayout -edit -vis ($ddl_shadingMode=="Schlick") SchlickShaderLayout;
+	frameLayout -edit -vis ($ddl_shadingMode=="Kajiya-Kay") KajiyaKayShaderLayout;
+	frameLayout -edit -vis ($ddl_shadingMode=="Marschner") MarschnerShaderLayout;
+	
+	string $ddl_selfShadowFilter = `GetKrakatoaStringRenderSetting "selfShadowFilter"`;
+	attrControlGrp -edit -enable ($ddl_renderingMethod != "Voxels" && $ddl_selfShadowFilter=="Bilinear") int_lightingPassFilterSize;
+	
+	string $ddl_drawPointFilter = `GetKrakatoaStringRenderSetting "drawPointFilter"`;
+	attrControlGrp -edit -enable ($ddl_renderingMethod != "Voxels" && $ddl_drawPointFilter=="Bilinear") int_finalPassFilterSize;
+
+	KMY_updateMemoryCalculator();
+}
+
+global string $krakatoaUIupdateFrames[];
+clear $krakatoaUIupdateFrames;
+$krakatoaUIupdateFrames = { "KrakatoaParticleSourcesLayout", "GlobalRenderValuesLayout", "GlobalCopyChannelsLayout", "RenderPassesLayout", "RenderingControlsLayout", "DensityControlsLayout", "MBlurDOFControlsLayout", "MatteObjectsLayout", "DeepRenderLayout", "KrakatoaMemoryCalculatorLayout", "KrakatoaSanityChecksLayout", "MiscSettingsLayout" };
+global string $krakatoaUIframeSettingsNode;
+$krakatoaUIframeSettingsNode = "KrakatoaUIFrameSettings";
+
+
+global proc int KMY_updateMemoryFootprint( )
+{
+	string $KMYnode = GetKrakatoaSettingsNodeName();
+	
+	textScrollList -edit -ra lbx_unusedChannels;
+	textScrollList -edit -ra lbx_usedChannels;
+	
+	string $unusedChannels[] = {};
+	string $usedChannels[] = {};
+	string $allChannels[] = {
+		"Position", "float32[3]", "_TRUE",
+		"Color", "float16[3]", "_TRUE",
+		"Lighting", "float16[3]", "ignoreSceneLights",
+		"Velocity", "float16[3]", "enableMotionBlur",
+		"Absorption", "float16[3]", "useAbsorption",
+		"Emission", "float16[3]", "useEmission",
+		"Tangent", "float16[3]", "_CUSTOM",
+		"Normal", "float16[3]", "_CUSTOM",
+		"Density", "float16", "_TRUE",
+		"MBlurTime", "float16", "_CUSTOM",
+		
+		"SpecularLevel", "float16", "_CUSTOM",
+		"SpecularPower", "float16", "_CUSTOM",
+		"Eccentricity", "float16", "_CUSTOM",
+		
+		"SpecularGlossiness", "float16", "_CUSTOM",
+		"SpecularShift", "float16", "_CUSTOM",
+		
+		"Specular2Level", "float16", "_CUSTOM",
+		"Specular2Glossiness", "float16", "_CUSTOM",
+		"Specular2Shift", "float16", "_CUSTOM",
+		
+		"GlintLevel", "float16", "_CUSTOM",
+		"GlintSize", "float16", "_CUSTOM",
+		"GlintGlossiness", "float16", "_CUSTOM",
+
+		"DiffuseLevel", "float16", "_CUSTOM",
+
+		"BokehBlendInfluence", "float16", "_CUSTOM"
+	};
+	
+	string $ddl_shadingMode = `GetKrakatoaStringRenderSetting "shadingMode"`;
+	int $usedBytesPP = 0;
+	for ($i = 0; $i < `size $allChannels`; $i = $i + 3)
+	{
+		string $aChannel = $allChannels[$i];
+		string $aChannelType = $allChannels[$i+1];
+		int $useChannel = 0;
+		if ($allChannels[$i+2] == "_CUSTOM")
+		{
+			if ($aChannel == "Normal") $useChannel = eval ( "getAttr "+$KMYnode+ ".shadingMode") == 1 || eval ( "getAttr "+$KMYnode+ ".shadingMode") == 5;
+			if ($aChannel == "Tangent") $useChannel = eval ( "getAttr "+$KMYnode+ ".shadingMode") > 3;
+			if ($aChannel == "MBlurTime") $useChannel = eval ( "getAttr "+$KMYnode+ ".jitteredMotionBlur")  && eval ( "getAttr "+$KMYnode+ ".enableMotionBlur");
+			
+			if ($aChannel == "Eccentricity") 
+			{
+				if (( $ddl_shadingMode == "Henyey-Greenstein" ) && eval ( "getAttr "+$KMYnode+ ".useHgEccentricityChannel")) $useChannel  = 1;
+				if (( $ddl_shadingMode == "Schlick" ) && eval ( "getAttr "+$KMYnode+ ".useSchlickEccentricityChannel")) $useChannel  = 1;
+			}
+			if ($aChannel == "SpecularLevel") 
+			{
+				if (( $ddl_shadingMode == "Phong Surface" )  && eval ( "getAttr "+$KMYnode+ ".usePhongSpecularLevelChannel") ) $useChannel = 1;				
+				if (( $ddl_shadingMode == "Kajiya-Kay" ) && eval ( "getAttr "+$KMYnode+ ".useKkSpecularLevelChannel") ) $useChannel = 1;
+				if (( $ddl_shadingMode == "Marschner" )  && eval ( "getAttr "+$KMYnode+ ".useMarschnerSpecularLevelChannel") ) $useChannel = 1;				
+			}
+			if ($aChannel == "SpecularPower") 
+			{
+				if (( $ddl_shadingMode == "Phong Surface" )  && eval ( "getAttr "+$KMYnode+ ".usePhongSpecularPowerChannel") ) $useChannel = 1;				
+				if (( $ddl_shadingMode == "Kajiya-Kay" )  && eval ( "getAttr "+$KMYnode+ ".useKkSpecularPowerChannel") ) $useChannel = 1;
+			}
+			if ( $ddl_shadingMode == "Marschner" )
+			{
+				if (($aChannel == "SpecularGlossiness") && eval ( "getAttr "+$KMYnode+ ".useMarschnerSpecularGlossinessChannel"))  $useChannel =  1;
+				if (($aChannel == "SpecularShift") && eval ( "getAttr "+$KMYnode+ ".useMarschnerSpecularShiftChannel"))  $useChannel =  1;
+				
+				if (($aChannel == "Specular2Level") && eval ( "getAttr "+$KMYnode+ ".useMarschnerSpecular2LevelChannel"))  $useChannel =  1;
+				if (($aChannel == "Specular2Glossiness") && eval ( "getAttr "+$KMYnode+ ".useMarschnerSpecular2GlossinessChannel"))  $useChannel =  1;
+				if (($aChannel == "Specular2Shift") && eval ( "getAttr "+$KMYnode+ ".useMarschnerSpecular2ShiftChannel"))  $useChannel =  1;
+				
+				if (($aChannel == "GlintLevel") && eval ( "getAttr "+$KMYnode+ ".useMarschnerGlintLevelChannel"))  $useChannel =  1;
+				if (($aChannel == "GlintSize") && eval ( "getAttr "+$KMYnode+ ".useMarschnerGlintSizeChannel"))  $useChannel =  1;
+				if (($aChannel == "GlintGlossiness") && eval ( "getAttr "+$KMYnode+ ".useMarschnerGlintGlossinessChannel"))  $useChannel =  1;
+				
+				if (($aChannel == "DiffuseLevel") && eval ( "getAttr "+$KMYnode+ ".useMarschnerDiffuseLevelChannel"))  $useChannel =  1;
+			}
+			if ($aChannel == "BokehBlendInfluence")
+			{
+				$useChannel = eval ( "getAttr "+$KMYnode+ ".enableDOF" ) == 1 && eval ( "getAttr "+$KMYnode+ ".enableBokehBlendMap" ) == 1 && eval ( "getAttr "+$KMYnode+ ".allocateBokehBlendInfluence" ) == 1;
+			}
+		}
+		else
+		{
+			if ($allChannels[$i+2] == "_TRUE")
+			{
+				$useChannel = 1;
+			}
+			else
+			{
+				$useChannel = eval ( "getAttr "+$KMYnode+"."+$allChannels[$i+2]);
+				if ($allChannels[$i+2] == "ignoreSceneLights") $useChannel = !$useChannel;
+			}
+		}
+		if ( $useChannel )
+		{
+			if ($aChannelType == "float16") $usedBytesPP = $usedBytesPP + 2;
+			if ($aChannelType == "float32") $usedBytesPP = $usedBytesPP + 4;
+			if ($aChannelType == "float16[3]") $usedBytesPP = $usedBytesPP + 6;
+			if ($aChannelType == "float32[3]") $usedBytesPP = $usedBytesPP + 12;
+			
+			appendStringArray($usedChannels, {$aChannel + "  " + $aChannelType}, 1);
+		}
+		else
+		{
+			appendStringArray($unusedChannels, {$aChannel + "  " + $aChannelType}, 1);
+		}		
+	}
+	text -edit -label ("Active Channels: "+ $usedBytesPP+" Bytes Per Particle")  lbl_bytesPerParticle;
+	
+	for ($aChannel in $unusedChannels) textScrollList -edit -append $aChannel lbx_unusedChannels;
+	for ($aChannel in $usedChannels) textScrollList -edit -append $aChannel lbx_usedChannels;
+	
+	KMY_updateKrakatoaRenderSettingTitles();
+	
+	return ($usedBytesPP);
+}
+
+
+global proc KMY_updateMemoryCalculator()
+{
+	int $usedBytesPP = KMY_updateMemoryFootprint();
+	float $pCount = `floatSliderGrp -q -v flt_particlesInMillions`;
+	float $memoryUsage = ($pCount * $usedBytesPP / 1.048576 / 1024.0);
+	floatSliderGrp -edit -v $memoryUsage flt_memoryInGB;
+	
+	KMY_updateSanityChecks();
+}
+
+global proc KMY_updateMemoryCalculatorFromMemory()
+{
+	int $usedBytesPP = KMY_updateMemoryFootprint();
+	float $memoryUsage = `floatSliderGrp -q -v flt_memoryInGB`;
+	float $pCount = ($memoryUsage * 1073.741824 / $usedBytesPP );
+	floatSliderGrp -edit -v $pCount flt_particlesInMillions;
+}
+
+
+proc int nodeIsVisible( string $node )
+{
+	if ( !`objExists $node` ) return false;
+	if ( !`attributeQuery -node $node -exists "visibility"` ) return false;
+	int $visible = `getAttr ( $node + ".visibility" )`;
+
+	if ( `attributeQuery -node $node -exists "intermediateObject"` )
+	{
+		$visible = $visible && !`getAttr ( $node + ".intermediateObject" )`;
+	}
+	if ( `attributeQuery -node $node -exists "overrideEnabled"` && `getAttr ( $node + ".overrideEnabled" )` )
+	{
+		$visible = $visible && `getAttr ( $node + ".overrideVisibility" )`;
+	}
+	if ( $visible )
+	{
+		string $parents[] = `listRelatives -parent $node`;
+		if ( `size $parents` > 0 )
+		{
+			$visible = $visible && nodeIsVisible( $parents[0] );
+		}
+	}
+	return $visible;
+}
+
+
+//SANITY CHECK FIXER FUNCTIONS
+global proc KMY_enableEmission()
+{
+	string $KMYnode = GetKrakatoaSettingsNodeName();
+	eval ("setAttr "+$KMYnode+".useEmission 1;" ); 
+	eval ("setAttr "+$KMYnode+".overrideEmission 1;" ); 
+	KMY_updateSanityChecks();
+}
+global proc KMY_enableForceAdditive(int $newMode)
+{
+	string $KMYnode = GetKrakatoaSettingsNodeName();
+	eval ("setAttr "+$KMYnode+".forceAdditiveMode "+ $newMode + ";" ); 
+	KMY_updateSanityChecks();
+}
+global proc KMY_enableLights()
+{
+	string $KMYnode = GetKrakatoaSettingsNodeName();
+	eval ("setAttr "+$KMYnode+".ignoreSceneLights 0;" ); 
+	KMY_updateSanityChecks();
+}
+global proc KMY_enableForceEXR()
+{
+	string $KMYnode = GetKrakatoaSettingsNodeName();
+	eval ("setAttr "+$KMYnode+".forceEXROutput 1;" ); 
+	KMY_updateSanityChecks();	
+}
+global proc KMY_disableVolumetricPasses()
+{
+	string $KMYnode = GetKrakatoaSettingsNodeName();
+	eval ("setAttr "+$KMYnode+".saveNormalPass 0;" ); 
+	eval ("setAttr "+$KMYnode+".saveVelocityPass 0;" ); 
+	eval ("setAttr "+$KMYnode+".saveZDepthPass 0;" ); 
+	KMY_updateSanityChecks();	
+}
+
+global proc KMY_deactivateAllPointLights()
+{
+	string $allLights[] = `ls -lights`;	
+	for ($aLight in $allLights) 
+	{
+		if (`nodeType $aLight` == "pointLight") 
+		{
+			eval ("setAttr "+$aLight+".visibility 0;");
+		}
+	}	
+	KMY_updateSanityChecks();
+}
+
+global proc KMY_enableAllSources()
+{
+	string $KMYnode = GetKrakatoaSettingsNodeName();
+	eval ("setAttr "+$KMYnode+".exportMayaParticles 1;" ); 
+	eval ("setAttr "+$KMYnode+".exportPRTLoaders 1;" ); 
+	eval ("setAttr "+$KMYnode+".exportPRTVolumes 1;" ); 
+	eval ("setAttr "+$KMYnode+".exportPRTSurfaces 1;" ); 
+	eval ("setAttr "+$KMYnode+".exportPRTFractals 1;" ); 
+	KMY_updateSanityChecks();
+}
+
+global proc PRTVolumeAdaptiveViewportSpacing (string $targetNode, string $rootNodeName)
+{
+	float $bbox[] = `exactWorldBoundingBox $targetNode`;
+	float $theX = $bbox[3] - $bbox[0];
+	float $theY = $bbox[4] - $bbox[1];
+	float $theZ = $bbox[5] - $bbox[2];
+	float $theMaxSize = `max $theX $theY`;
+	$theMaxSize = `max $theMaxSize $theZ`;
+	$theMaxSize = $theMaxSize / 50.0;
+	setAttr ($rootNodeName +".viewportSpacing") $theMaxSize;
+}
+
+global proc PRTVolumeUpdateAlignTransformButton (string $attributeName)
+{
+	if (`objExists $attributeName`)
+	{
+		int $isConnected = `connectionInfo -id $attributeName`;
+
+		string $toks[];
+		tokenize($attributeName, ".", $toks);
+		if (!$isConnected)
+		{
+			button -e -label ("ALIGN Position And Rotation of PRTVolume to Source Mesh") PRTVolumeAlignTransformButton;	
+			button -e -enable false PRTVolumeAlignTransformButton;	
+		}
+		else
+		{
+			string $meshPlug = ($toks[0] + ".inMesh");
+			string $meshSource = `connectionInfo -sourceFromDestination $meshPlug`;
+			string $toks2[];
+			tokenize($meshSource, ".", $toks2);
+			button -e -c ("PRTVolumeAlignToMeshTransform(\"" + $toks[0] + "\");") PRTVolumeAlignTransformButton;
+			button -e -label ("ALIGN Position And Rotation of PRTVolume to Source Mesh") PRTVolumeAlignTransformButton;	
+			button -e -enable true PRTVolumeAlignTransformButton;	
+		}
+	}
+}
+
+global proc PRTVolumeAlignToMeshTransform(string $attributeName)
+{
+	//get the parent transform node of the source mesh
+	string $meshPlug = $attributeName+".inMesh";
+	string $meshSource = `connectionInfo -sourceFromDestination $meshPlug`;
+	string $toks2[];
+	tokenize($meshSource, ".", $toks2);
+	string $parents[] = `listRelatives -parent $toks2[0]`;
+	
+	//get the parent trasnform node of the PRT Volume itself
+	string $parents2[] = `listRelatives -parent $attributeName`;
+	
+	//copy the world space position, rotation and scale from the Source Mesh to the PRT Volume
+	float $trans[] = `xform -worldSpace -q -translation $parents[0]`;
+	float $rot[] = `xform -worldSpace -q -rotation $parents[0]`;
+	//float $scale[] = `xform -objectSpace -q -scale $parents[0]`;
+	
+	xform -worldSpace -translation $trans[0] $trans[1] $trans[2] $parents2[0];
+	xform -worldSpace -rotation $rot[0] $rot[1] $rot[2] $parents2[0];	
+	//xform -objectSpace -scale $scale[0] $scale[1] $scale[2] $parents2[0];
+	
+	select -r $attributeName;
+}
+
+global proc PRTVolumeRenamePRTVolume (string $attributeName)
+{
+	string $meshPlug = $attributeName+".inMesh";
+	string $meshSource = `connectionInfo -sourceFromDestination $meshPlug`;
+	string $toks2[];
+	tokenize($meshSource, ".", $toks2);
+	string $parents[] = `listRelatives -parent $toks2[0]`;
+	string $parents2[] = `listRelatives -parent $attributeName`;
+	
+	string $toks3[];
+	tokenize($parents[0], ":", $toks3);
+	string $newName = $toks3[((`size $toks3`)-1)];
+	
+	rename $attributeName ("PRTVolume_"+$newName );
+	rename $parents2[0] ("PRTVolumeTransform_"+$newName );
+}
+
+global proc PRTSurfaceUpdateAlignTransformButton (string $attributeName)
+{
+	if (`objExists $attributeName`)
+	{
+		int $isConnected = `connectionInfo -id $attributeName`;
+
+		string $toks[];
+		tokenize($attributeName, ".", $toks);
+		if (!$isConnected)
+		{
+			button -e -label ("ALIGN Position And Rotation of PRTSurface to Source Mesh") PRTSurfaceAlignTransformButton;	
+			button -e -enable false PRTSurfaceAlignTransformButton;	
+		}
+		else
+		{
+			string $meshPlug = ($toks[0] + ".inMesh");
+			string $meshSource = `connectionInfo -sourceFromDestination $meshPlug`;
+			string $toks2[];
+			tokenize($meshSource, ".", $toks2);
+			button -e -c ("PRTSurfaceAlignToMeshTransform(\"" + $toks[0] + "\");") PRTSurfaceAlignTransformButton;
+			button -e -label ("ALIGN Position And Rotation of PRTSurface to Source Mesh") PRTSurfaceAlignTransformButton;	
+			button -e -enable true PRTSurfaceAlignTransformButton;	
+		}
+	}
+}
+
+global proc PRTSurfaceAlignToMeshTransform(string $attributeName)
+{
+	//get the parent transform node of the source mesh
+	string $meshPlug = $attributeName+".inMesh";
+	string $meshSource = `connectionInfo -sourceFromDestination $meshPlug`;
+	string $toks2[];
+	tokenize($meshSource, ".", $toks2);
+	string $parents[] = `listRelatives -parent $toks2[0]`;
+	
+	//get the parent trasnform node of the PRT Surface itself
+	string $parents2[] = `listRelatives -parent $attributeName`;
+	
+	//copy the world space position, rotation and scale from the Source Mesh to the PRT Volume
+	float $trans[] = `xform -worldSpace -q -translation $parents[0]`;
+	float $rot[] = `xform -worldSpace -q -rotation $parents[0]`;
+	//float $scale[] = `xform -objectSpace -q -scale $parents[0]`;
+	
+	xform -worldSpace -translation $trans[0] $trans[1] $trans[2] $parents2[0];
+	xform -worldSpace -rotation $rot[0] $rot[1] $rot[2] $parents2[0];	
+	//xform -objectSpace -scale $scale[0] $scale[1] $scale[2] $parents2[0];
+	
+	select -r $attributeName;
+}
+
+global proc PRTSurfaceRenamePRTSurface (string $attributeName)
+{
+	string $meshPlug = $attributeName+".inMesh";
+	string $meshSource = `connectionInfo -sourceFromDestination $meshPlug`;
+	string $toks2[];
+	tokenize($meshSource, ".", $toks2);
+	string $parents[] = `listRelatives -parent $toks2[0]`;
+	string $parents2[] = `listRelatives -parent $attributeName`;
+	
+	string $toks3[];
+	tokenize($parents[0], ":", $toks3);
+	string $newName = $toks3[((`size $toks3`)-1)];
+	
+	rename $attributeName ("PRTSurface_"+$newName );
+	rename $parents2[0] ("PRTSurfaceTransform_"+$newName );
+}
+
+//SANITY CHECK MAIN FUNCTION:
+global proc KMY_updateSanityChecks()
+{
+	string $sanityWarnings[];
+	global string $K2KSR_sanityActions[];
+	$K2KSR_sanityActions = {};
+	textScrollList -edit -ra lbx_SanityChecks;
+	
+	string $KMYnode = GetKrakatoaSettingsNodeName();
+	
+	string $allLights[] = `ls -lights`;	
+	int $useEmission = eval ( "getAttr "+$KMYnode+".useEmission"); 
+	int $forceAdditive = eval ( "getAttr "+$KMYnode+".forceAdditiveMode"); 
+	int $ignoreSceneLights = eval ( "getAttr "+$KMYnode+".ignoreSceneLights"); 
+	int $forceEXROutput = eval ( "getAttr "+$KMYnode+".forceEXROutput"); 
+	int $saveNormalPass = eval ( "getAttr "+$KMYnode+".saveNormalPass"); 
+	int $saveVelocityPass = eval ( "getAttr "+$KMYnode+".saveVelocityPass"); 
+	int $saveZDepthPass = eval ( "getAttr "+$KMYnode+".saveZDepthPass"); 
+	int $saveOccludedPass = eval ( "getAttr "+$KMYnode+".saveOccludedPass"); 
+	// int $enableMatteObjects = eval ( "getAttr "+$KMYnode+".enableMatteObjects"); 
+
+
+	int $exportMayaParticles = eval ( "getAttr "+$KMYnode+".exportMayaParticles"); 
+	int $exportPRTLoaders = eval ( "getAttr "+$KMYnode+".exportPRTLoaders"); 
+	int $exportPRTVolumes = eval ( "getAttr "+$KMYnode+".exportPRTVolumes"); 
+	int $exportPRTSurfaces = eval ( "getAttr "+$KMYnode+".exportPRTSurfaces"); 
+	int $exportPRTFractals = eval ( "getAttr "+$KMYnode+".exportPRTFractals"); 
+
+		
+	string $ddl_renderingMethod = `GetKrakatoaStringRenderSetting "renderingMethod"`;
+
+	
+	if (!$exportMayaParticles && !$exportPRTLoaders && !$exportPRTVolumes && !$exportPRTSurfaces && !$exportPRTFractals)
+	{
+		appendStringArray($sanityWarnings, {"--ALL PARTICLE SOURCE OPTIONS ARE UNCHECKED! No particles will render."}, 1); 
+		appendStringArray($sanityWarnings, {"  To avoid this problem, either"}, 1); 
+		appendStringArray($K2KSR_sanityActions, {""}, 1); 
+		appendStringArray($K2KSR_sanityActions, {""}, 1); 
+		
+		
+		appendStringArray($sanityWarnings, {"    > Manually check one or more particle source options in the [Particle Sources] panel;"}, 1);
+		appendStringArray($sanityWarnings, {"    * Check ALL particle source options in the [Particle Sources] panel;"}, 1);
+		appendStringArray($sanityWarnings, {""}, 1); 			
+		appendStringArray($K2KSR_sanityActions, {""}, 1); 	
+		appendStringArray($K2KSR_sanityActions, {"KMY_enableAllSources()"}, 1); 
+		appendStringArray($K2KSR_sanityActions, {""}, 1); 	
+	}		
+	
+	if ($ignoreSceneLights == 1 && $useEmission == 0 && $forceAdditive == 0)
+	{
+		if ($ddl_renderingMethod == "Voxels")
+		{
+			appendStringArray($sanityWarnings, {"--[IGNORE SCENE LIGHTS] IS CHECKED, and both [Use Emission] and [Force Additive Mode] are unchecked!"}, 1); 
+			appendStringArray($sanityWarnings, {"  Voxel mode will not render unless at least one light is active, or emissive/additive particles are rendered. To avoid this, either"}, 1); 
+			appendStringArray($sanityWarnings, {"    * Uncheck [Ignore Scene Lights] and make sure you have visible lights in the scene;"}, 1);
+			appendStringArray($sanityWarnings, {"    * Check [Use Emission], then check [Override Emission], or provide per-particle Emission or incandescencePP data;"}, 1); 
+			appendStringArray($sanityWarnings, {"    * Check [Force Additive Mode]."}, 1);
+			appendStringArray($sanityWarnings, {""}, 1); 	
+
+			appendStringArray($K2KSR_sanityActions, {""}, 1); 
+			appendStringArray($K2KSR_sanityActions, {""}, 1); 
+			appendStringArray($K2KSR_sanityActions, {"KMY_enableLights();"}, 1); 
+			appendStringArray($K2KSR_sanityActions, {"KMY_enableEmission();"}, 1); 
+			appendStringArray($K2KSR_sanityActions, {"KMY_enableForceAdditive(1);"}, 1); 
+			appendStringArray($K2KSR_sanityActions, {""}, 1); 		
+
+		}	
+		else		
+		{
+			appendStringArray($sanityWarnings, {"--[IGNORE SCENE LIGHTS] IS CHECKED, and both [Use Emission] and [Force Additive Mode] are unchecked!"}, 1); 
+			appendStringArray($sanityWarnings, {"  Particles will render black RGB. To avoid this problem, either"}, 1); 
+			appendStringArray($sanityWarnings, {"    * Uncheck [Ignore Scene Lights] and make sure you have visible lights in the scene;"}, 1);
+			appendStringArray($sanityWarnings, {"    * Check [Use Emission], then check [Override Emission], or provide per-particle Emission or incandescencePP data;"}, 1); 
+			appendStringArray($sanityWarnings, {"    * Check [Force Additive Mode]."}, 1);
+			appendStringArray($sanityWarnings, {""}, 1); 	
+
+			appendStringArray($K2KSR_sanityActions, {""}, 1); 
+			appendStringArray($K2KSR_sanityActions, {""}, 1); 
+			appendStringArray($K2KSR_sanityActions, {"KMY_enableLights();"}, 1); 
+			appendStringArray($K2KSR_sanityActions, {"KMY_enableEmission();"}, 1); 
+			appendStringArray($K2KSR_sanityActions, {"KMY_enableForceAdditive(1);"}, 1); 
+			appendStringArray($K2KSR_sanityActions, {""}, 1); 		
+		}
+	}
+	else
+	{
+		if (`size $allLights` == 0 )
+		{
+			if ($ddl_renderingMethod == "Voxels")
+			{	
+				appendStringArray($sanityWarnings, {"--NO LIGHTS IN THE SCENE! Krakatoa WILL NOT RENDER in Voxel Mode."}, 1); 
+				appendStringArray($sanityWarnings, {"  At least one non-Point light must be active, OR [Force Additive Mode] must be on. To fix this, either"}, 1); 
+				appendStringArray($K2KSR_sanityActions, {""}, 1); 
+				appendStringArray($K2KSR_sanityActions, {""}, 1); 
+				
+				appendStringArray($sanityWarnings, {"    * Create a new Spot Light;"}, 1); 
+				appendStringArray($K2KSR_sanityActions, {"defaultSpotLight(1, 1,1,1, 0, 90, 0, 0, 0, 0,0,0, 1, 0); move -r 0 0 10; KMY_updateSanityChecks();"}, 1); 
+				
+				appendStringArray($sanityWarnings, {"    * Check [Force Additive Mode]"}, 1); 				
+				appendStringArray($K2KSR_sanityActions, {"KMY_enableForceAdditive(1);"}, 1); 
+			}
+			else
+			{
+				if ($useEmission == 0 && $forceAdditive == 0)
+				{
+					appendStringArray($sanityWarnings, {"--NO LIGHTS IN THE SCENE! Particles will render black RGB. To avoid this problem, either"}, 1); 
+					appendStringArray($K2KSR_sanityActions, {""}, 1); 
+					
+					appendStringArray($sanityWarnings, {"    * Create a new Point Light;"}, 1); 
+					appendStringArray($sanityWarnings, {"    * Create a new Spot Light;"}, 1); 
+					appendStringArray($sanityWarnings, {"    * Check [Use Emission], then check [Override Emission], or provide per-particle Emission or incandescencePP data;"}, 1); 
+					appendStringArray($sanityWarnings, {"    * Check [Force Additive Mode]"}, 1); 
+					appendStringArray($sanityWarnings, {""}, 1); 				
+					
+					appendStringArray($K2KSR_sanityActions, {"defaultPointLight(1, 1,1,1, 0, 0, 0,0,0, 1); move -r -10 10 1; KMY_updateSanityChecks();"}, 1); 
+					appendStringArray($K2KSR_sanityActions, {"defaultSpotLight(1, 1,1,1, 0, 90, 0, 0, 0, 0,0,0, 1, 0); move -r 0 0 10; KMY_updateSanityChecks();"}, 1); 
+					appendStringArray($K2KSR_sanityActions, {"KMY_enableEmission();"}, 1); 
+					appendStringArray($K2KSR_sanityActions, {"KMY_enableForceAdditive(1);"}, 1); 
+					appendStringArray($K2KSR_sanityActions, {""}, 1); 
+				}
+			}
+		}
+		else
+		{
+			if ($useEmission == 0 && $forceAdditive == 0)
+			{
+				int $allHidden = 1;
+				int $PointLights = 0;
+				for ($aLight in $allLights) 
+				{
+					if (`nodeIsVisible $aLight`) 
+					{
+						$allHidden = 0;
+						if (`nodeType $aLight` == "pointLight") $PointLights = $PointLights + 1;
+					}
+				}
+				if ($allHidden) 
+				{
+					if ($ddl_renderingMethod == "Voxels")
+					{
+						appendStringArray($sanityWarnings, {"--NO ACTIVE LIGHTS IN THE SCENE! Krakatoa WILL NOT RENDER in Voxel Mode."}, 1); 
+						appendStringArray($sanityWarnings, {"  At least one non-Point light must be active, OR [Force Additive Mode] must be on. To fix this, either"}, 1); 
+						appendStringArray($K2KSR_sanityActions, {""}, 1); 
+						appendStringArray($K2KSR_sanityActions, {""}, 1); 
+						
+						appendStringArray($sanityWarnings, {"    * Create a new Spot Light;"}, 1); 
+						appendStringArray($K2KSR_sanityActions, {"defaultSpotLight(1, 1,1,1, 0, 90, 0, 0, 0, 0,0,0, 1, 0); move -r 0 0 10; KMY_updateSanityChecks();"}, 1); 
+						
+						appendStringArray($sanityWarnings, {"    * Check [Force Additive Mode]"}, 1); 				
+						appendStringArray($K2KSR_sanityActions, {"KMY_enableForceAdditive(1);"}, 1); 
+					}
+					else		
+					{
+						appendStringArray($sanityWarnings, {"--NO ACTIVE LIGHTS in the scene! Particles will render black. To avoid this problem, either"}, 1); 
+						appendStringArray($K2KSR_sanityActions, {""}, 1); 
+						
+						appendStringArray($sanityWarnings, {"    > Unhide at least one Light;"}, 1); 
+						appendStringArray($sanityWarnings, {"    * Create a new Point Light;"}, 1); 
+						appendStringArray($sanityWarnings, {"    * Create a new Spot Light"}, 1); 
+						appendStringArray($sanityWarnings, {""}, 1); 
+						
+						appendStringArray($K2KSR_sanityActions, {""}, 1); 
+						appendStringArray($K2KSR_sanityActions, {"KMY_createPointLight();"}, 1); 
+						appendStringArray($K2KSR_sanityActions, {"KMY_createSpotLight();"}, 1); 
+						appendStringArray($K2KSR_sanityActions, {""}, 1); 
+					}
+				}
+				else
+				{
+					if ($ddl_renderingMethod == "Voxels" && $PointLights)
+					{
+						string $pluralLights = "";
+						if ($PointLights > 1) $pluralLights = "S";
+						appendStringArray($sanityWarnings, {("--"+ $PointLights +" ACTIVE POINT LIGHT"+ $pluralLights +" FOUND IN THE SCENE! Krakatoa WILL NOT RENDER in Voxel Mode.")}, 1); 
+						appendStringArray($sanityWarnings, {"  Point lights are currently unsupported in Voxel mode and must be deactivated. To fix this problem,"}, 1); 
+						appendStringArray($K2KSR_sanityActions, {""}, 1); 
+						appendStringArray($K2KSR_sanityActions, {""}, 1); 
+						
+						appendStringArray($sanityWarnings, {"    * Deactivate All Point Lights;"}, 1); 
+						appendStringArray($K2KSR_sanityActions, {"KMY_deactivateAllPointLights();"}, 1); 
+					}					
+				}
+			}
+		}
+	}
+	
+	if (!$forceEXROutput && ($saveNormalPass || $saveVelocityPass || $saveZDepthPass || $saveOccludedPass ) )
+	{
+		appendStringArray($sanityWarnings, {"--[FORCE OUTPUT TO EXR] is unchecked and at least one Render Pass is selected."}, 1); 
+		appendStringArray($sanityWarnings, {"  This will cause multiple image files to be saved to disk instead of one multi-layer OpenEXR. If this was not your intention,"}, 1); 
+		appendStringArray($K2KSR_sanityActions, {""}, 1); 	
+		appendStringArray($K2KSR_sanityActions, {""}, 1); 	
+		
+		appendStringArray($sanityWarnings, {"    * Check [Force Output to .EXR]"}, 1); 
+		appendStringArray($sanityWarnings, {""}, 1); 
+		
+		appendStringArray($K2KSR_sanityActions, {"KMY_enableForceEXR();"}, 1); 
+		appendStringArray($K2KSR_sanityActions, {""}, 1); 
+	}
+	
+	if ($forceAdditive && ($saveNormalPass || $saveVelocityPass || $saveZDepthPass ) )
+	{
+		appendStringArray($sanityWarnings, {"--[FORCE ADDITIVE MODE] IS CHECKED and at least one Render Pass requiring Volumetric shading is selected."}, 1); 
+		appendStringArray($sanityWarnings, {"  The data saved in these Render Passes will be INVALID in Additive Mode. It is recommented that you either"}, 1); 
+		appendStringArray($K2KSR_sanityActions, {""}, 1); 	
+		appendStringArray($K2KSR_sanityActions, {""}, 1); 			
+		
+		appendStringArray($sanityWarnings, {"    * Uncheck the affected passes to reduce disk space usage if Additive RGB output is required;"}, 1); 
+		appendStringArray($sanityWarnings, {"    * Uncheck [Force Additive Mode] to produce volumetric data and save valid passes."}, 1); 
+		appendStringArray($sanityWarnings, {""}, 1); 		
+		
+		appendStringArray($K2KSR_sanityActions, {"KMY_disableVolumetricPasses();"}, 1); 		
+		appendStringArray($K2KSR_sanityActions, {"KMY_enableForceAdditive(0);"}, 1); 		
+		appendStringArray($K2KSR_sanityActions, {""}, 1);		
+	}
+	
+	
+	if (`size $sanityWarnings` == 0)
+		appendStringArray($sanityWarnings, {"> No Warnings."}, 1); 
+	
+	for ($aLine in $sanityWarnings) textScrollList -edit -append $aLine lbx_SanityChecks;
+		
+	KMY_updateKrakatoaRenderSettingTitles();	
+}
+
+global proc KMY_performFixAction()
+{
+	global string $K2KSR_sanityActions[];
+	int $index[] = `textScrollList -q -sii lbx_SanityChecks`;
+	eval ($K2KSR_sanityActions[$index[0]-1]);
+}
+
+global proc KMY_updateKrakatoaRenderSettingTitles()
+{
+	int $showinfo = `checkBoxGrp -q -value1 ddl_collapsedPanelsInfo`;
+	
+	string $label = "Particle Sources  ";
+	if (`frameLayout -q -cl KrakatoaParticleSourcesLayout` && $showinfo)
+	{
+		$label += "                    ";
+		$prop = (`KrakatoaSettingsAttributeName "exportMayaParticles"`);
+		if (`getAttr $prop`) $label += "[Particles] ";
+		$prop = (`KrakatoaSettingsAttributeName "exportPRTLoaders"`);
+		if (`getAttr $prop`) $label += "[Loaders] ";
+		$prop = (`KrakatoaSettingsAttributeName "exportPRTVolumes"`);
+		if (`getAttr $prop`) $label += "[Volumes] ";
+		$prop = (`KrakatoaSettingsAttributeName "exportPRTSurfaces"`);
+		if (`getAttr $prop`) $label += "[Surfaces] ";
+		$prop = (`KrakatoaSettingsAttributeName "exportPRTFractals"`);
+		if (`getAttr $prop`) $label += "[Fractals]";
+	}
+	frameLayout -e -label $label KrakatoaParticleSourcesLayout;	
+	
+	$label = "Render Output And Passes  ";
+	string $datatypes[] = {"UInt","Half","Float"};
+	string $compressionmodes[] = {"NoComp","RLE","ZLib1","ZLib16","Piz","Lossy24","LossyFixed","LossyFlat"};
+	if (`frameLayout -q -cl RenderPassesLayout` && $showinfo)
+	{
+		$label += "";
+		$prop = (`KrakatoaSettingsAttributeName "forceEXROutput"`);
+		$prop2 = (`KrakatoaSettingsAttributeName "exrCompressionType"`); 
+		
+		if (`getAttr $prop`) 
+		{
+			$label += "[EXR "+$compressionmodes[(int)`getAttr $prop2`]+"] ";
+			$prop3 = (`KrakatoaSettingsAttributeName "exrRgbaBitDepth"`);
+			$label += "[RGBA "+$datatypes[(int)`getAttr $prop3`]+"] ";
+		}
+		
+		$prop = (`KrakatoaSettingsAttributeName "saveNormalPass"`);
+		$prop2 = (`KrakatoaSettingsAttributeName "exrNormalBitDepth"`);
+		if (`getAttr $prop`) $label += "[+Normal "+$datatypes[(int)`getAttr $prop2`] +"] ";
+		
+		$prop = (`KrakatoaSettingsAttributeName "saveVelocityPass"`);
+		$prop2 = (`KrakatoaSettingsAttributeName "exrVelocityBitDepth"`);
+		if (`getAttr $prop`) $label += "[+Vel "+$datatypes[(int)`getAttr $prop2`] +"] ";
+		
+		$prop = (`KrakatoaSettingsAttributeName "saveZDepthPass"`);
+		$prop2 = (`KrakatoaSettingsAttributeName "exrZBitDepth"`);
+		if (`getAttr $prop`) $label += "[+Z "+$datatypes[(int)`getAttr $prop2`] +"] ";
+		
+		$prop = (`KrakatoaSettingsAttributeName "saveOccludedPass"`);
+		$prop2 = (`KrakatoaSettingsAttributeName "exrOccludedBitDepth"`);
+		if (`getAttr $prop`) $label += "[+Occluded "+$datatypes[(int)`getAttr $prop2`] +"] ";
+	}
+	frameLayout -e -label $label RenderPassesLayout;	
+	
+	$label = "Global Render Values  ";
+	if (`frameLayout -q -cl GlobalRenderValuesLayout` && $showinfo)
+	{
+		$label += "          ";
+		$prop = (`KrakatoaSettingsAttributeName "overrideBG"`);
+		if (`getAttr $prop`) $label += "[Override BG] ";
+		$prop = (`KrakatoaSettingsAttributeName "overrideColor"`);
+		if (`getAttr $prop`) $label += "[Override Color] ";
+		$prop = (`KrakatoaSettingsAttributeName "overrideEmission"`);
+		if (`getAttr $prop`) $label += "[Override Emission] ";
+		$prop = (`KrakatoaSettingsAttributeName "overrideAbsorption"`);
+		if (`getAttr $prop`) $label += "[Override Absorption] ";
+		$prop = (`KrakatoaSettingsAttributeName "overrideDensity"`);
+		if (`getAttr $prop`) $label += "[Override Density]";
+	}
+	frameLayout -e -label $label GlobalRenderValuesLayout;	
+	
+
+	$label = "Phong Surface Shader  ";
+	if (`frameLayout -q -cl PhongSurfaceShaderLayout` && $showinfo)
+	{
+		$label += "         ";
+		$prop = (`KrakatoaSettingsAttributeName "usePhongSpecularPowerChannel"`);
+		$prop2 = (`KrakatoaSettingsAttributeName "phongSpecularPower"`);
+		$label += "[";
+		if (`getAttr $prop`) $label += "PP "; 
+		$label += "SpecularPower:"+ `getAttr $prop2` + "] ";
+
+		$prop = (`KrakatoaSettingsAttributeName "usePhongSpecularLevelChannel"`);
+		$prop2 = (`KrakatoaSettingsAttributeName "phongSpecularLevel"`);
+		$label += "[";
+		if (`getAttr $prop`) $label += "PP ";  
+		$label += "SpecularLevel:"+ `getAttr $prop2` + "] ";
+	}
+	frameLayout -e -label $label PhongSurfaceShaderLayout;		
+	
+	$label = "Henyey-Greenstein Shader ";
+	if (`frameLayout -q -cl HenyeyGreensteinShaderLayout` && $showinfo)
+	{
+		$prop = (`KrakatoaSettingsAttributeName "useHgEccentricityChannel"`);
+		$prop2 = (`KrakatoaSettingsAttributeName "hgEccentricity"`);
+		$label += "[";
+		if (`getAttr $prop`) $label += "PP "; 
+		$label += "Eccentricity:"+ `getAttr $prop2` + "] ";
+	}
+	frameLayout -e -label $label HenyeyGreensteinShaderLayout;	
+
+	$label = "Schlick Shader  ";
+	if (`frameLayout -q -cl SchlickShaderLayout` && $showinfo)
+	{
+		$label += "                       ";
+		$prop = (`KrakatoaSettingsAttributeName "useSchlickEccentricityChannel"`);
+		$prop2 = (`KrakatoaSettingsAttributeName "schlickEccentricity"`);
+		$label += "[";
+		if (`getAttr $prop`) $label += "PP "; 
+		$label += "Eccentricity:"+ `getAttr $prop2` + "] ";
+	}
+	frameLayout -e -label $label SchlickShaderLayout;	
+	
+	$label = "Kajiya-Kay Hair Shader  ";
+	if (`frameLayout -q -cl KajiyaKayShaderLayout` && $showinfo)
+	{
+		$label += "       ";
+		$prop = (`KrakatoaSettingsAttributeName "useKkSpecularPowerChannel"`);
+		$prop2 = (`KrakatoaSettingsAttributeName "kkSpecularPower"`);
+		$label += "[";
+		if (`getAttr $prop`) $label += "PP "; 
+		$label += "SpecularPower:"+ `getAttr $prop2` + "] ";
+
+		$prop = (`KrakatoaSettingsAttributeName "useKkSpecularLevelChannel"`);
+		$prop2 = (`KrakatoaSettingsAttributeName "kkSpecularLevel"`);
+		$label += "[";
+		if (`getAttr $prop`) $label += "PP ";  
+		$label += "SpecularLevel:"+ `getAttr $prop2` + "] ";
+	}
+	frameLayout -e -label $label KajiyaKayShaderLayout;		
+	
+	$label = "Marschner Hair Shader  ";
+	if (`frameLayout -q -cl MarschnerShaderLayout` && $showinfo)
+	{
+		$label += "       ";
+
+		$prop = (`KrakatoaSettingsAttributeName "useMarschnerSpecularLevelChannel"`);
+		$prop2 = (`KrakatoaSettingsAttributeName "marschnerSpecularLevel"`);
+		$label += "[";
+		if (`getAttr $prop`) $label += "PP ";  
+		$label += "SL:"+ `getAttr $prop2` + "] ";
+		
+		$prop = (`KrakatoaSettingsAttributeName "useMarschnerSpecularGlossinessChannel"`);
+		$prop2 = (`KrakatoaSettingsAttributeName "marschnerSpecularGlossiness"`);
+		$label += "[";
+		if (`getAttr $prop`) $label += "PP "; 
+		$label += "SG:"+ `getAttr $prop2` + "] ";		
+		
+		$prop = (`KrakatoaSettingsAttributeName "useMarschnerSpecularShiftChannel"`);
+		$prop2 = (`KrakatoaSettingsAttributeName "marschnerSpecularShift"`);
+		$label += "[";
+		if (`getAttr $prop`) $label += "PP "; 
+		$label += "SS:"+ `getAttr $prop2` + "] ";		
+		
+		$prop = (`KrakatoaSettingsAttributeName "useMarschnerSpecular2LevelChannel"`);
+		$prop2 = (`KrakatoaSettingsAttributeName "marschnerSpecular2Level"`);
+		$label += "[";
+		if (`getAttr $prop`) $label += "PP "; 
+		$label += "SL2:"+ `getAttr $prop2` + "] ";		
+
+		$prop = (`KrakatoaSettingsAttributeName "useMarschnerSpecular2GlossinessChannel"`);
+		$prop2 = (`KrakatoaSettingsAttributeName "marschnerSpecular2Glossiness"`);
+		$label += "[";
+		if (`getAttr $prop`) $label += "PP "; 
+		$label += "SG2:"+ `getAttr $prop2` + "] ";
+
+		$prop = (`KrakatoaSettingsAttributeName "useMarschnerSpecular2ShiftChannel"`);
+		$prop2 = (`KrakatoaSettingsAttributeName "marschnerSpecular2Shift"`);
+		$label += "[";
+		if (`getAttr $prop`) $label += "PP "; 
+		$label += "SS2:"+ `getAttr $prop2` + "] ";	
+		
+		$prop = (`KrakatoaSettingsAttributeName "useMarschnerGlintLevelChannel"`);
+		$prop2 = (`KrakatoaSettingsAttributeName "marschnerGlintLevel"`);
+		$label += "[";
+		if (`getAttr $prop`) $label += "PP "; 
+		$label += "GL:"+ `getAttr $prop2` + "] ";			
+		
+		$prop = (`KrakatoaSettingsAttributeName "useMarschnerGlintSizeChannel"`);
+		$prop2 = (`KrakatoaSettingsAttributeName "marschnerGlintSize"`);
+		$label += "[";
+		if (`getAttr $prop`) $label += "PP "; 
+		$label += "GS:"+ `getAttr $prop2` + "] ";	
+
+		$prop = (`KrakatoaSettingsAttributeName "useMarschnerGlintGlossinessChannel"`);
+		$prop2 = (`KrakatoaSettingsAttributeName "marschnerGlintGlossiness"`);
+		$label += "[";
+		if (`getAttr $prop`) $label += "PP "; 
+		$label += "GG:"+ `getAttr $prop2` + "] ";	
+		
+		$prop = (`KrakatoaSettingsAttributeName "useMarschnerDiffuseLevelChannel"`);
+		$prop2 = (`KrakatoaSettingsAttributeName "marschnerDiffuseLevel"`);
+		$label += "[";
+		if (`getAttr $prop`) $label += "PP "; 
+		$label += "DL:"+ `getAttr $prop2` + "] ";		
+	}
+	frameLayout -e -label $label MarschnerShaderLayout;		
+	
+	$label = "Rendering Controls  ";
+	if (`frameLayout -q -cl RenderingControlsLayout` && $showinfo)
+	{
+		$label += "              ";
+		$prop = (`KrakatoaSettingsAttributeName "renderingMethod"`);
+		$prop2 = (`KrakatoaSettingsAttributeName "voxelSize"`);
+		$prop3 = (`KrakatoaSettingsAttributeName "voxelFilterRadius"`);
+		$prop4 = (`KrakatoaSettingsAttributeName "loadPercentage"`); 
+		
+		if (`getAttr $prop` == 0) 
+		{
+			$label += "[Particles"; 
+			if (`getAttr $prop4` < 100) $label += " "+(int)`getAttr $prop4`+"%";
+			$label += "] ";
+		}
+		else 
+		{
+			$label += "[Voxels";
+			if (`getAttr $prop4` < 100) $label += " "+(int)`getAttr $prop4`+"%";
+			$label += " R:"+`getAttr $prop2`+" F:"+`getAttr $prop3`+"] ";
+		}
+		$prop = (`KrakatoaSettingsAttributeName "ignoreSceneLights"`);
+		if (`getAttr $prop`) $label += "[No Lights] ";
+		$prop = (`KrakatoaSettingsAttributeName "forceAdditiveMode"`);
+		if (`getAttr $prop`) 
+		{
+			$label += "[Additive]";
+		}
+		else
+		{
+			$prop = (`KrakatoaSettingsAttributeName "useEmission"`);
+			if (`getAttr $prop`) $label += "[Use Emission] ";
+			$prop = (`KrakatoaSettingsAttributeName "useAbsorption"`);
+			if (`getAttr $prop`) $label += "[Use Absorption]";			
+		}
+	}
+	frameLayout -e -label $label RenderingControlsLayout;	
+
+	$label = "Lighting and Drawing Pass Density and Filtering  ";
+	if (`frameLayout -q -cl DensityControlsLayout` && $showinfo)
+	{
+		$label = "Lighting and Drawing Pass   ";
+		
+		$prop = (`KrakatoaSettingsAttributeName "selfShadowFilter"`);
+		$prop2 = (`KrakatoaSettingsAttributeName "lightingPassFilterSize"`);
+		string $filtermode[] = {"Nearest","Bilinear","Bicubic"};
+		
+		$label += "[Shadow:"+$filtermode[(int)`getAttr $prop`];
+		if (`getAttr $prop` == 1) $label += " "+`getAttr $prop2`;
+		$label +="] ";
+		
+		$prop = (`KrakatoaSettingsAttributeName "useLightingPassDensity"`);
+		$prop2 = (`KrakatoaSettingsAttributeName "lightingPassDensity"`);
+		$prop3 = (`KrakatoaSettingsAttributeName "lightingPassDensityExponent"`);
+		if (`getAttr $prop`) $label += "[LP Density "+`getAttr $prop2`+"E"+`getAttr $prop3`+"] ";		
+		
+		$prop = (`KrakatoaSettingsAttributeName "drawPointFilter"`);
+		$prop2 = (`KrakatoaSettingsAttributeName "finalPassFilterSize"`);
+		$label += "[Draw:"+$filtermode[(int)`getAttr $prop`];
+		if (`getAttr $prop`== 1) $label += " " +`getAttr $prop2`;
+		$label +="] ";
+		
+		$prop = (`KrakatoaSettingsAttributeName "finalPassDensity"`);
+		$prop2 = (`KrakatoaSettingsAttributeName "finalPassDensityExponent"`);
+		$label += "[Density "+`getAttr $prop`+"E"+`getAttr $prop2`+"] ";
+		
+		$prop = (`KrakatoaSettingsAttributeName "useEmissionStrength"`);
+		$prop2 = (`KrakatoaSettingsAttributeName "emissionStrength"`);
+		$prop3 = (`KrakatoaSettingsAttributeName "emissionStrengthExponent"`);
+		if (`getAttr $prop`) $label += "[Emission "+`getAttr $prop2`+"E"+`getAttr $prop3`+"] ";
+		
+	}
+	frameLayout -e -label $label DensityControlsLayout;		
+	
+	$label = "Motion Blur and Depth Of Field  ";
+	if (`frameLayout -q -cl MBlurDOFControlsLayout` && $showinfo)
+	{
+		$label = "Motion Blur and DOF              ";
+		
+		$prop = (`KrakatoaSettingsAttributeName "enableMotionBlur"`);
+		$prop2 = (`KrakatoaSettingsAttributeName "motionBlurParticleSegments"`);
+		$prop3 = (`KrakatoaSettingsAttributeName "shutterAngle"`);
+		$prop4 = (`KrakatoaSettingsAttributeName "motionBlurBias"`);
+		$prop5 = (`KrakatoaSettingsAttributeName "jitteredMotionBlur"`);
+		
+		if (`getAttr $prop`) 
+		{
+			if (`getAttr $prop5`) $label += "[Jittered "; else 	$label += "[";
+			$label += "MBlur Segs:"+`getAttr $prop2`+" Shutter:"+`getAttr $prop3`+"] ";
+
+			$prop = (`KrakatoaSettingsAttributeName "disableCameraBlur"`);
+			if (`getAttr $prop`) $label += "[No Camera Blur]";
+		}
+		
+		$prop = (`KrakatoaSettingsAttributeName "enableDOF"`);
+		$prop2 = (`KrakatoaSettingsAttributeName "sampleRateDOF"`);
+		
+		if (`getAttr $prop`) $label += "[DOF Rate:"+`getAttr $prop2`+"]";
+		
+	}
+	frameLayout -e -label $label MBlurDOFControlsLayout;
+	
+	$label = "Matte Objects";
+	if (`frameLayout -q -cl MatteObjectsLayout` && $showinfo)
+	{
+		$label += "                         ";
+		$prop = (`KrakatoaSettingsAttributeName "enableMatteObjects"`);
+		$prop2 = (`KrakatoaSettingsAttributeName "matteSuperSampling"`);
+		if (`getAttr $prop`) $label += "[Render Mattes, Super-Sampling " + `getAttr $prop2` + "]";
+	}
+	frameLayout -e -label $label MatteObjectsLayout;		
+	
+	$label = "Memory Channels";
+	if (`frameLayout -q -cl KrakatoaMemoryCalculatorLayout` && $showinfo)
+	{
+		$label += "                  ";
+		$prop = `text -q -label  lbl_bytesPerParticle`;
+		$channelscount = `textScrollList -q -ni lbx_usedChannels`;	
+		$label +=  "["+$channelscount+" "+$prop+"]";
+	}
+	frameLayout -e -label $label KrakatoaMemoryCalculatorLayout;	
+
+	$label = "Sanity Checks";
+	string $allitems[] = `textScrollList -q -ai lbx_SanityChecks`;	
+	string $erroritems[] = {};
+	for ($i = 0; $i < `size $allitems`; $i++) 
+		if ( `size $allitems[$i]` > 1 && `substring $allitems[$i] 1 1` == "-" ) 
+			$erroritems[`size $erroritems`] = $allitems[$i];
+	int $errorscount = `size $erroritems`;
+	
+	if (`frameLayout -q -cl KrakatoaSanityChecksLayout` && $showinfo)
+	{
+		$label += "                         ";
+		if ($errorscount == 0) 
+			$label +=  ""; //"[No Warnings]";
+		else if ($errorscount == 1)
+			$label +=  "[1 Warning]";
+		else
+			$label +=  "["+($errorscount)+" Warnings]";
+	}
+	if ($errorscount == 0) 
+		frameLayout -e -bgc 0.3058 0.3058 0.3058  KrakatoaSanityChecksLayout; //
+	else if ($errorscount == 1)
+		frameLayout -e -bgc 0.30 0.10 0.10 KrakatoaSanityChecksLayout;
+	else
+		frameLayout -e -bgc 0.40 0.15 0.15 KrakatoaSanityChecksLayout;
+	
+	frameLayout -e -label $label KrakatoaSanityChecksLayout;	
+	
+
+	$label = "Miscellaneous Settings";
+	if (`frameLayout -q -cl MiscSettingsLayout` && $showinfo)
+	{
+		$label += "        ";
+		$prop = (`KrakatoaSettingsAttributeName "threadCount"`);
+		$value = (int)`getAttr $prop`;
+		if ($value > 0)
+		{
+			if ($value == 1)
+				$label +=  "[Limit to 1 Thread]";
+			else
+				$label +=  "[Limit to "+$value+" Threads]";
+		}
+	}
+	frameLayout -e -label $label MiscSettingsLayout;	
+}
+
+global proc string createKrakatoaRenderSettingsUI()
+{
+	string $rootFormName = `scrollLayout -width 680 -horizontalScrollBarThickness 16 -verticalScrollBarThickness 16 krakatoaRendererGlobalsScrollLayout`;
+	string $shaderChannelTooltip = "Check to allocated a memory channel with the specified value. Per-particle data will override it.";
+	// ensure settings node exists
+	CreateKrakatoaSettingsNode();
+	
+	//
+	// Put the attribute controls here
+	//
+	
+	columnLayout -adjustableColumn true;
+	
+	// ensure the top level window containing this control is wide enough to display it
+	string $topLevelWindowName = `setParent -q -topLevel`;
+	string $tokens[];
+	tokenize($topLevelWindowName, "|", $tokens);
+	
+	if ( `window -q -width $tokens[0]` < 710 )
+	{
+		window -e -width 710 $tokens[0];
+	}
+	
+	frameLayout -label "About" -collapsable true -collapse true;
+		string $version = "Krakatoa for Maya v" + `krakatoaGetVersion`;
+		text -label $version -al "left";
+		text -label "";
+		button -label "Notices" -command ("KMY_showNoticesDialog()") btn_showNoticesDialog;
+	setParent ..;
+
+	frameLayout -label "Particle Sources" -collapsable true -collapse true -cc ("KMY_updateKrakatoaRenderSettingTitles();") -ec ("KMY_updateKrakatoaRenderSettingTitles();") KrakatoaParticleSourcesLayout;	
+		gridLayout -numberOfColumns 2 -cellWidthHeight 325 20;
+			attrControlGrp -label "Render Maya Particles" -a `KrakatoaSettingsAttributeName "exportMayaParticles"` -cc ("KMY_updateSanityChecks();") chk_exportMayaParticles;
+			attrControlGrp -label "Render PRT Loaders" -a `KrakatoaSettingsAttributeName "exportPRTLoaders"` -cc ("KMY_updateSanityChecks()") chk_exportPRTLoaders;
+			//attrControlGrp -label "Render Maya Hair" -a `KrakatoaSettingsAttributeName "exportMayaHair"` -enable false -cc ("KMY_updateSanityChecks()") chk_exportMayaHair;
+			attrControlGrp -label "Render PRT Volumes" -a `KrakatoaSettingsAttributeName "exportPRTVolumes"` -cc ("KMY_updateSanityChecks()") chk_exportPRTVolumes;
+			attrControlGrp -label "Render PRT Surfaces" -a `KrakatoaSettingsAttributeName "exportPRTSurfaces"` -cc ("KMY_updateSanityChecks()") chk_exportPRTSurfaces;
+			attrControlGrp -label "Render PRT Fractals" -a `KrakatoaSettingsAttributeName "exportPRTFractals"` -cc ("KMY_updateSanityChecks()") chk_exportPRTFractals;
+		setParent ..;
+	setParent ..;
+	
+
+	frameLayout -label "Render Output And Passes" -collapsable true -collapse true -cc ("KMY_updateKrakatoaRenderSettingTitles();") -ec ("KMY_updateKrakatoaRenderSettingTitles();") RenderPassesLayout;
+		gridLayout -numberOfColumns 2 -cellWidthHeight 325 20;
+			attrControlGrp -label "Force Output to .EXR" -a `KrakatoaSettingsAttributeName "forceEXROutput"` -cc ("KMY_setControlsVisibility(); KMY_updateSanityChecks()") chk_forceEXROutput;
+		setParent ..;
+
+		gridLayout -numberOfColumns 2 -cellWidthHeight 325 20;
+			attrControlGrp -label "EXR compression type:" -a `KrakatoaSettingsAttributeName "exrCompressionType"` -cc ("KMY_updateSanityChecks()") ddl_exrCompressionType;
+			attrControlGrp -label "RGBA bit depth:" -a `KrakatoaSettingsAttributeName "exrRgbaBitDepth"` -cc ("KMY_updateSanityChecks()") ddl_exrRgbaBitDepth;
+			attrControlGrp -label "Save Normal Pass" -a `KrakatoaSettingsAttributeName "saveNormalPass"` -cc ("KMY_setControlsVisibility(); KMY_updateSanityChecks()") chk_saveNormalPass;
+			attrControlGrp -label "Normal bit depth:" -a `KrakatoaSettingsAttributeName "exrNormalBitDepth"` -cc ("KMY_updateSanityChecks()") ddl_exrNormalBitDepth;
+			attrControlGrp -label "Save Velocity Pass" -a `KrakatoaSettingsAttributeName "saveVelocityPass"` -cc ("KMY_setControlsVisibility(); KMY_updateSanityChecks()") chk_saveVelocityPass;
+			attrControlGrp -label "Velocity bit depth:" -a `KrakatoaSettingsAttributeName "exrVelocityBitDepth"` -cc ("KMY_updateSanityChecks()") ddl_exrVelocityBitDepth;
+			attrControlGrp -label "Save Z-Depth Pass" -a `KrakatoaSettingsAttributeName "saveZDepthPass"` -cc ("KMY_setControlsVisibility(); KMY_updateSanityChecks()") chk_saveZDepthPass;
+			attrControlGrp -label "Z bit depth:" -a `KrakatoaSettingsAttributeName "exrZBitDepth"` -cc ("KMY_updateSanityChecks()") ddl_exrZBitDepth;
+			attrControlGrp -label "Save Occluded Particles Pass" -a `KrakatoaSettingsAttributeName "saveOccludedPass"` -cc ("KMY_setControlsVisibility(); KMY_updateSanityChecks()") chk_saveOccludedPass;
+			attrControlGrp -label "Occluded bit depth:" -a `KrakatoaSettingsAttributeName "exrOccludedBitDepth"` -cc ("KMY_updateSanityChecks()") ddl_exrOccludedBitDepth;
+		setParent ..;
+	setParent ..;
+
+	frameLayout -label "Global Render Values" -collapsable true -collapse true -cc ("KMY_updateKrakatoaRenderSettingTitles();") -ec ("KMY_updateKrakatoaRenderSettingTitles();") GlobalRenderValuesLayout;
+		gridLayout -numberOfColumns 2 -cellWidthHeight 325 20;
+			attrControlGrp -label "Override Background Color" -a `KrakatoaSettingsAttributeName "overrideBG"` chk_overrideBG;
+			attrControlGrp -label "Background Color:" -hideMapButton true -a `KrakatoaSettingsAttributeName "backgroundColor"` clr_backgroundColor;
+			attrControlGrp -label "Override Color" -a `KrakatoaSettingsAttributeName "overrideColor"` chk_overrideColor;
+			attrControlGrp -label "Color Override:" -hideMapButton true -a `KrakatoaSettingsAttributeName "colorChannelOverride"` clr_colorChannelOverride;
+			attrControlGrp -label "Override Emission" -a `KrakatoaSettingsAttributeName "overrideEmission"` chk_overrideEmission;
+			attrControlGrp -label "Emission Override :" -hideMapButton true -a `KrakatoaSettingsAttributeName "emissionChannelOverride"` clr_emissionChannelOverride;
+			attrControlGrp -label "Override Absorption" -a `KrakatoaSettingsAttributeName "overrideAbsorption"` chk_overrideAbsorption;
+			attrControlGrp -label "Absorption Override:" -hideMapButton true -a `KrakatoaSettingsAttributeName "absorptionChannelOverride"` clr_absorptionChannelOverride;
+			attrControlGrp -label "Override Density" -a `KrakatoaSettingsAttributeName "overrideDensity"` chk_overrideDensity;
+			attrControlGrp -label "Density Override:" -hideMapButton true -a `KrakatoaSettingsAttributeName "densityChannelOverride"` clr_densityChannelOverride;
+		setParent ..;
+	setParent ..;
+
+	frameLayout -label "Phong Surface Shader" -collapsable true -collapse false -cc ("KMY_updateKrakatoaRenderSettingTitles();") -ec ("KMY_updateKrakatoaRenderSettingTitles();") PhongSurfaceShaderLayout;
+		gridLayout -numberOfColumns 2 -cellWidthHeight 325 20;
+			attrControlGrp -label "Use 'SpecularPower' Channel" -a `KrakatoaSettingsAttributeName "usePhongSpecularPowerChannel"`  -cc ("KMY_updateMemoryCalculator()")  -ann $shaderChannelTooltip chk_usePhongSpecularPower; 
+			attrControlGrp -label "Specular Power:" -a `KrakatoaSettingsAttributeName "phongSpecularPower"` flt_phongSpecularPower;
+			attrControlGrp -label "Use 'SpecularLevel' Channel" -a `KrakatoaSettingsAttributeName "usePhongSpecularLevelChannel"` -cc ("KMY_updateMemoryCalculator()") -ann $shaderChannelTooltip chk_usePhongSpecularLevel;
+			attrControlGrp -label "Specular Level:" -a `KrakatoaSettingsAttributeName "phongSpecularLevel"` flt_phongSpecularLevel;
+		setParent ..;
+	setParent ..;
+
+	frameLayout -label "Henyey-Greenstein Shader" -collapsable true -collapse false -cc ("KMY_updateKrakatoaRenderSettingTitles();") -ec ("KMY_updateKrakatoaRenderSettingTitles();") HenyeyGreensteinShaderLayout;
+		gridLayout -numberOfColumns 2 -cellWidthHeight 325 20;
+			attrControlGrp -label "Use 'Eccentricity' Channel" -a `KrakatoaSettingsAttributeName "useHgEccentricityChannel"` -cc ("KMY_updateMemoryCalculator()") -ann $shaderChannelTooltip chk_useHgEccentricity;
+			attrControlGrp -label "Eccentricity:" -a `KrakatoaSettingsAttributeName "hgEccentricity"` flt_hgEccentricity;
+		setParent ..;
+	setParent ..;
+
+	frameLayout -label "Schlick Shader" -collapsable true -collapse false -cc ("KMY_updateKrakatoaRenderSettingTitles();") -ec ("KMY_updateKrakatoaRenderSettingTitles();") SchlickShaderLayout;
+		gridLayout -numberOfColumns 2 -cellWidthHeight 325 20;
+			attrControlGrp -label "Use 'Eccentricity' Channel" -a `KrakatoaSettingsAttributeName "useSchlickEccentricityChannel"` -cc ("KMY_updateMemoryCalculator()") -ann $shaderChannelTooltip chk_useSchlickEccentricity;
+			attrControlGrp -label "Eccentricity:" -a `KrakatoaSettingsAttributeName "schlickEccentricity"` flt_schlickEccentricity;
+		setParent ..;
+	setParent ..;
+
+	frameLayout -label "Kajiya-Kay Hair Shader" -collapsable true -collapse false -cc ("KMY_updateKrakatoaRenderSettingTitles();") -ec ("KMY_updateKrakatoaRenderSettingTitles();") KajiyaKayShaderLayout;
+		gridLayout -numberOfColumns 2 -cellWidthHeight 325 20;
+			attrControlGrp -label "Use 'SpecularLevel' Channel" -a `KrakatoaSettingsAttributeName "useKkSpecularPowerChannel"` -cc ("KMY_updateMemoryCalculator()") -ann $shaderChannelTooltip chk_useKkSpecularPower;
+			attrControlGrp -label "Specular Level:" -a `KrakatoaSettingsAttributeName "kkSpecularPower"` flt_kkSpecularPower;
+
+			attrControlGrp -label "Use 'SpecularPower' Channel" -a `KrakatoaSettingsAttributeName "useKkSpecularLevelChannel"` -cc ("KMY_updateMemoryCalculator()") -ann $shaderChannelTooltip chk_useKkSpecularLevel;
+			attrControlGrp -label "Specular Power:" -a `KrakatoaSettingsAttributeName "kkSpecularLevel"` flt_kkSpecularLevel;
+		setParent ..;
+	setParent ..;
+
+	frameLayout -label "Marschner Hair Shader" -collapsable true -collapse false -cc ("KMY_updateKrakatoaRenderSettingTitles();") -ec ("KMY_updateKrakatoaRenderSettingTitles();") MarschnerShaderLayout;
+		gridLayout -numberOfColumns 2 -cellWidthHeight 325 20;
+		
+			attrControlGrp -label "Use 'SpecularLevel' Channel" -a `KrakatoaSettingsAttributeName "useMarschnerSpecularLevelChannel"` -cc ("KMY_updateMemoryCalculator()") -ann $shaderChannelTooltip chk_useMarschnerSpecularLevel;
+			attrControlGrp -label "Specular Level:" -a `KrakatoaSettingsAttributeName "marschnerSpecularLevel"` flt_marschnerSpecularLevel;
+			
+			attrControlGrp -label "Use 'SpecularGlossiness' Channel" -a `KrakatoaSettingsAttributeName "useMarschnerSpecularGlossinessChannel"` -cc ("KMY_updateMemoryCalculator()") chk_useMarschnerSpecularGlossiness;
+			attrControlGrp -label "Specular Glossiness:" -a `KrakatoaSettingsAttributeName "marschnerSpecularGlossiness"` flt_marschnerSpecularGlossiness;
+			
+			attrControlGrp -label "Use 'SpecularShift' Channel" -a `KrakatoaSettingsAttributeName "useMarschnerSpecularShiftChannel"` -cc ("KMY_updateMemoryCalculator()") -ann $shaderChannelTooltip chk_useMarschnerSpecularShift;
+			attrControlGrp -label "Specular Shift:" -a `KrakatoaSettingsAttributeName "marschnerSpecularShift"` flt_marschnerSpecularShift;
+
+
+			attrControlGrp -label "Use 'Specular2Level' Channel" -a `KrakatoaSettingsAttributeName "useMarschnerSpecular2LevelChannel"` -cc ("KMY_updateMemoryCalculator()") -ann $shaderChannelTooltip chk_useMarschnerSpecular2Level;
+			attrControlGrp -label "Specular 2 Level:" -a `KrakatoaSettingsAttributeName "marschnerSpecular2Level"` flt_marschnerSpecular2Level;
+
+			attrControlGrp -label "Use 'Specular2Glossiness' Channel" -a `KrakatoaSettingsAttributeName "useMarschnerSpecular2GlossinessChannel"` -cc ("KMY_updateMemoryCalculator()") -ann $shaderChannelTooltip chk_useMarschnerSpecular2Glossiness;
+			attrControlGrp -label "Specular 2 Glossiness:" -a `KrakatoaSettingsAttributeName "marschnerSpecular2Glossiness"` flt_marschnerSpecular2Glossiness;
+
+			attrControlGrp -label "Use 'Specular2Shift' Channel" -a `KrakatoaSettingsAttributeName "useMarschnerSpecular2ShiftChannel"` -cc ("KMY_updateMemoryCalculator()") -ann $shaderChannelTooltip chk_useMarschnerSpecular2Shift;
+			attrControlGrp -label "Specular 2 Shift:" -a `KrakatoaSettingsAttributeName "marschnerSpecular2Shift"` flt_marschnerSpecular2Shift;
+
+
+			attrControlGrp -label "Use 'GlintLevel' Channel" -a `KrakatoaSettingsAttributeName "useMarschnerGlintLevelChannel"` -cc ("KMY_updateMemoryCalculator()") -ann $shaderChannelTooltip chk_useMarschnerGlintLevel;
+			attrControlGrp -label "Glint Level:" -a `KrakatoaSettingsAttributeName "marschnerGlintLevel"` flt_marschnerGlintLevel;
+
+			attrControlGrp -label "Use 'GlintSize' Channel" -a `KrakatoaSettingsAttributeName "useMarschnerGlintSizeChannel"` -cc ("KMY_updateMemoryCalculator()") -ann $shaderChannelTooltip chk_useMarschnerGlintSize;
+			attrControlGrp -label "Glint Size:" -a `KrakatoaSettingsAttributeName "marschnerGlintSize"` flt_marschnerGlintSize;
+
+			attrControlGrp -label "Use 'GlintGlossiness' Channel" -a `KrakatoaSettingsAttributeName "useMarschnerGlintGlossinessChannel"` -cc ("KMY_updateMemoryCalculator()") -ann $shaderChannelTooltip chk_useMarschnerGlintGlossiness;
+			attrControlGrp -label "Glint Glossiness:" -a `KrakatoaSettingsAttributeName "marschnerGlintGlossiness"` flt_marschnerGlintGlossiness;
+			
+			
+			attrControlGrp -label "Use 'DiffuseLevel' Channel" -a `KrakatoaSettingsAttributeName "useMarschnerDiffuseLevelChannel"` -cc ("KMY_updateMemoryCalculator()") -ann $shaderChannelTooltip chk_useMarschnerDiffuseLevel;
+			attrControlGrp -label "Diffuse Level:" -a `KrakatoaSettingsAttributeName "marschnerDiffuseLevel"` flt_marschnerDiffuseLevel;
+		setParent ..;
+	setParent ..;
+
+	frameLayout -label "Rendering Controls" -collapsable true -collapse false -cc ("KMY_updateKrakatoaRenderSettingTitles();") -ec ("KMY_updateKrakatoaRenderSettingTitles();") RenderingControlsLayout;
+		gridLayout -numberOfColumns 2 -cellWidthHeight 325 20;
+			attrControlGrp -label "Shading Mode:" -a `KrakatoaSettingsAttributeName "shadingMode"` -cc ("KMY_setControlsVisibility(); KMY_updateMemoryCalculator()") -ann "Define the Light Scattering model to be used for Volumetric shading." ddl_shadingMode;
+			attrControlGrp -label "Rendering Method:" -a `KrakatoaSettingsAttributeName "renderingMethod"` -cc ("KMY_setControlsVisibility()") ddl_renderingMethod;
+
+			attrControlGrp -label "Ignore Scene Lights" -a `KrakatoaSettingsAttributeName "ignoreSceneLights"` -cc ("KMY_updateMemoryCalculator()") -ann "Skip lighting calculations. Useful when rendering with Emission or in Force Additive mode." chk_ignoreSceneLights;
+			attrControlGrp -label "Voxel Size:" -a `KrakatoaSettingsAttributeName "voxelSize"` flt_voxelSize;
+
+			attrControlGrp -label "Use Emission" -a `KrakatoaSettingsAttributeName "useEmission"` -cc ("KMY_updateMemoryCalculator()") -ann "Use the 'Emission' channel as additional lighting without a defined source." chk_useEmission;
+			attrControlGrp -label "Voxel Filter Radius:" -a `KrakatoaSettingsAttributeName "voxelFilterRadius"` int_voxelFilterRadius;
+
+			attrControlGrp -label "Use Absorption" -a `KrakatoaSettingsAttributeName "useAbsorption"` -cc ("KMY_updateMemoryCalculator()") -ann "Use the 'Absorption' channel to attenuate light's R,G and B components differently." chk_useAbsorption;
+			attrControlGrp -label "Particle Load Percent:" -a `KrakatoaSettingsAttributeName "loadPercentage"` flt_loadPercentage;
+			
+			attrControlGrp 
+				-label "Force Additive Mode" 
+				-a `KrakatoaSettingsAttributeName "forceAdditiveMode"` 
+				-cc ("KMY_setControlsVisibility(); KMY_updateMemoryCalculator()") 
+				-ann "Copies 'Color' to 'Emission' channel, resets 'Color' and 'Absorption' to Black to produce additive Color in RGB and no Alpha."
+				chk_forceAdditiveMode;
+		setParent ..;
+	setParent ..;
+
+	frameLayout -label "Lighting and Drawing Pass Density and Filtering" -collapsable true -collapse false -cc ("KMY_updateKrakatoaRenderSettingTitles();") -ec ("KMY_updateKrakatoaRenderSettingTitles();") DensityControlsLayout;
+		gridLayout -numberOfColumns 2 -cellWidthHeight 325 20;
+			attrControlGrp -label "Self-Shadow Filter:" -a `KrakatoaSettingsAttributeName "selfShadowFilter"` -cc ("KMY_setControlsVisibility()") ddl_selfShadowFilter;
+			attrControlGrp -label "Self-Shadow Filter Size:" -a `KrakatoaSettingsAttributeName "lightingPassFilterSize"` int_lightingPassFilterSize;
+			attrControlGrp -label "Draw Point Filter:" -a `KrakatoaSettingsAttributeName "drawPointFilter"` -cc ("KMY_setControlsVisibility()") ddl_drawPointFilter;
+			attrControlGrp -label "Final Pass Filter Size:" -a `KrakatoaSettingsAttributeName "finalPassFilterSize"` int_finalPassFilterSize;
+			attrControlGrp -label "Final Pass Density:" -a `KrakatoaSettingsAttributeName "finalPassDensity"` flt_finalPassDensity;
+			attrControlGrp -label "Final Pass Exponent:" -a `KrakatoaSettingsAttributeName "finalPassDensityExponent"` int_finalPassDensityExponent;
+			attrControlGrp -label "Use Lighting Pass Density" -a `KrakatoaSettingsAttributeName "useLightingPassDensity"` -cc ("KMY_setControlsVisibility()") chk_useLightingPassDensity;
+			text -label "";
+			attrControlGrp -label "Lighting Pass Density:" -a `KrakatoaSettingsAttributeName "lightingPassDensity"` flt_lightingPassDensity;
+			attrControlGrp -label "Lighting Pass Exponent:" -a `KrakatoaSettingsAttributeName "lightingPassDensityExponent"` int_lightingPassDensityExponent;
+			attrControlGrp -label "Use Emission Strength" -a `KrakatoaSettingsAttributeName "useEmissionStrength"` -cc ("KMY_setControlsVisibility()") chk_useEmissionStrength;
+			text -label "";
+			attrControlGrp -label "Emission Strength Value:" -a `KrakatoaSettingsAttributeName "emissionStrength"` flt_emissionStrength;
+			attrControlGrp -label "Emission Strength Exponent:" -a `KrakatoaSettingsAttributeName "emissionStrengthExponent"` int_emissionStrengthExponent;
+		setParent ..;
+	setParent ..;
+
+	frameLayout -label "Motion Blur and Depth Of Field" -collapsable true -collapse true -cc ("KMY_updateKrakatoaRenderSettingTitles();") -ec ("KMY_updateKrakatoaRenderSettingTitles();") MBlurDOFControlsLayout;
+		gridLayout -numberOfColumns 2 -cellWidthHeight 325 20;
+			attrControlGrp -label "Enable Motion Blur" -a `KrakatoaSettingsAttributeName "enableMotionBlur"` -cc ("KMY_setControlsVisibility(); KMY_updateMemoryCalculator()") chk_enableMotionBlur;
+			attrControlGrp -label "Particle Segments:" -a `KrakatoaSettingsAttributeName "motionBlurParticleSegments"` int_motionBlurParticleSegments;
+			attrControlGrp -label "Jittered Motion Blur" -a `KrakatoaSettingsAttributeName "jitteredMotionBlur"` -cc ("KMY_updateMemoryCalculator()") chk_jitteredMotionBlur;
+			attrControlGrp -label "Shutter Angle:" -a `KrakatoaSettingsAttributeName "shutterAngle"` flt_shutterAngle;
+			attrControlGrp -label "Disable Camera Motion Blur" -a `KrakatoaSettingsAttributeName "disableCameraBlur"` chk_disableCameraBlur;
+			attrControlGrp -label "Motion Blur Bias:" -a `KrakatoaSettingsAttributeName "motionBlurBias"` flt_motionBlurBias;
+		setParent ..;
+		gridLayout -numberOfColumns 2 -cellWidthHeight 325 20;
+			attrControlGrp -label "Enable Adaptive Motion Blur:" -a `KrakatoaSettingsAttributeName "enableAdaptiveMotionBlur"` -cc ("KMY_setControlsVisibility()") chk_enableAdaptiveMotionBlur;
+			attrControlGrp -label "AMB Min Samples:" -a `KrakatoaSettingsAttributeName "adaptiveMotionBlurMinSamples"` int_adaptiveMotionBlurMinSamples;
+			text -label "";
+			attrControlGrp -label "AMB Max Samples:" -a `KrakatoaSettingsAttributeName "adaptiveMotionBlurMaxSamples"` int_adaptiveMotionBlurMaxSamples;
+			text -label "";
+			attrControlGrp -label "AMB Smoothness:" -a `KrakatoaSettingsAttributeName "adaptiveMotionBlurSmoothness"` flt_adaptiveMotionBlurSmoothness;
+			text -label "";
+			attrControlGrp -label "AMB Exponent:" -a `KrakatoaSettingsAttributeName "adaptiveMotionBlurExponent"` flt_adaptiveMotionBlurExponent;
+		setParent ..;
+			separator -height 2;
+		gridLayout -numberOfColumns 2 -cellWidthHeight 325 20;
+			attrControlGrp -label "Enable Depth Of Field" -a `KrakatoaSettingsAttributeName "enableDOF"` -cc ("KMY_setControlsVisibility()") chk_enableDOF;
+			attrControlGrp -label "DOF Sample Rate:" -a `KrakatoaSettingsAttributeName "sampleRateDOF"` flt_sampleRateDOF;
+			attrControlGrp -label "Enable Bokeh Shape Map" -a `KrakatoaSettingsAttributeName "enableBokehShapeMap"` -cc ("KMY_setControlsVisibility()") chk_enableShapeMap;
+			attrControlGrp -label "Shape Map:" -a `KrakatoaSettingsAttributeName "bokehShapeMap"` clr_bokehShapeMap;
+			attrControlGrp -label "Enable Bokeh Blend Map" -a `KrakatoaSettingsAttributeName "enableBokehBlendMap"` -cc ("KMY_setControlsVisibility()") chk_enableBlendMap;
+			attrControlGrp -label "Blend Map:" -a `KrakatoaSettingsAttributeName "bokehBlendMap"` clr_bokehBlendMap;
+			attrControlGrp -label "Use BokehBlendInfluence Channel" -a `KrakatoaSettingsAttributeName "allocateBokehBlendInfluence"` -cc ("KMY_updateMemoryCalculator()") chk_allocateBokehBlendInfluence;
+			attrControlGrp -label "Blend Influence:" -a `KrakatoaSettingsAttributeName "bokehBlendInfluence"` flt_bokehBlendInfluence;
+			text -label "";
+			attrControlGrp -label "Blend Mipmap Scale:" -a `KrakatoaSettingsAttributeName "bokehBlendMipmapScale"` int_bokehBlendMipmapScale;
+			attrControlGrp -label "Enable Anamorphic Squeeze" -a `KrakatoaSettingsAttributeName "enableBokehAnamorphicSqueeze"` -cc ("KMY_setControlsVisibility()") chk_enableAnamorphicSqueeze;
+			attrControlGrp -label "Anamorphic Squeeze:" -a `KrakatoaSettingsAttributeName "bokehAnamorphicSqueeze"` flt_bokehAnamorphicSqueeze;
+		setParent ..;
+	setParent ..;
+	
+	frameLayout -label "Matte Objects" -collapsable true -collapse true -cc ("KMY_updateKrakatoaRenderSettingTitles();") -ec ("KMY_updateKrakatoaRenderSettingTitles();") MatteObjectsLayout;
+		gridLayout -numberOfColumns 2 -cellWidthHeight 325 25;
+			button -label "Tag Selected Objects As Matte" -height 25 btn_tagSelectedAsMatte;
+			button -label "Disable Selected Matte Objects" -height 25 btn_untagSelectedAsMatte;
+			attrControlGrp -label "Enable Matte Objects" -a `KrakatoaSettingsAttributeName "enableMatteObjects"` chk_enableMatteObjects;
+			attrControlGrp -label "Super-Sampling:" -a `KrakatoaSettingsAttributeName "matteSuperSampling"` int_matteSuperSampling;
+		setParent ..;
+	setParent ..;
+	
+	frameLayout -label "Memory Channels" -collapsable true -collapse true -cc ("KMY_updateKrakatoaRenderSettingTitles();") -ec ("KMY_updateKrakatoaRenderSettingTitles();") KrakatoaMemoryCalculatorLayout;
+		text -label "The channels listed in the right column will be allocated in memory at render time because of features that require them:" KrakatoaMemoryLayoutLabel;
+		gridLayout -numberOfColumns 2 -cellWidthHeight 325 12;
+			text -label "Inactive Channels:"  lbl_void01;
+			text -label "Bytes/Particle" lbl_bytesPerParticle;
+		setParent ..;
+		gridLayout -numberOfColumns 2 -cellWidthHeight 325 200;
+			textScrollList -numberOfRows 16 -allowMultiSelection false
+			    -showIndexedItem 4
+			    lbx_unusedChannels;	
+		
+			textScrollList -numberOfRows 16 -allowMultiSelection false
+			    -showIndexedItem 4		
+			    lbx_usedChannels;				
+		setParent ..;
+		
+		text -label "Use these values to calculate the memory requirements for a specific particle count, or the count that fits in given memory:" KrakatoaMemoryCalculatorLabel;
+		gridLayout -numberOfColumns 2 -cellWidthHeight 325 20;
+			floatSliderGrp -label "Particles (in Millions) " -field true
+				-minValue 1.0 -maxValue 1000.0
+				-fieldMinValue 0.001 -fieldMaxValue 100000.0
+				-value 10.0
+				-pre 6
+				-cc ("KMY_updateMemoryCalculator()") 
+				flt_particlesInMillions; 
+			floatSliderGrp -label "Will Use Memory (in GB): " -field true
+				-minValue 1.0 -maxValue 64.0
+				-fieldMinValue 0.001 -fieldMaxValue 1024.0 
+				-value 16.0
+				-pre 6
+				-cc ("KMY_updateMemoryCalculatorFromMemory()")
+				flt_memoryInGB; 
+		setParent ..;		
+	setParent ..;	
+	
+	frameLayout -label "Sanity Checks" -collapsable true -collapse true -cc ("KMY_updateKrakatoaRenderSettingTitles();") -ec ("KMY_updateKrakatoaRenderSettingTitles();") KrakatoaSanityChecksLayout;
+		button -label "Perform Sanity Checks NOW!" btn_updateSanityCheck;
+		textScrollList -numberOfRows 12 -allowMultiSelection false
+		    -showIndexedItem 4
+		    -dcc ("KMY_performFixAction();")
+		    lbx_SanityChecks;
+		text -label "To apply a fix for a reported problem, double-click a suggestion prefixed with *" -height 20;
+	setParent ..;
+
+	frameLayout -label "Miscellaneous Settings" -collapsable true -collapse true -cc ("KMY_updateKrakatoaRenderSettingTitles();") -ec ("KMY_updateKrakatoaRenderSettingTitles();") MiscSettingsLayout;
+		gridLayout -numberOfColumns 2 -cellWidthHeight 325 20;
+			checkBoxGrp -label "" -value1 true -numberOfCheckBoxes 1 -label1 "Display Collapsed Panel Info" -cc1 ("KMY_setRenderDialogIniKey \"RenderDialogSettings\" \"ShowCollapsedPanelInfo\";KMY_updateKrakatoaRenderSettingTitles();") ddl_collapsedPanelsInfo;
+			attrControlGrp -label "Renderer Log Level: " -a `KrakatoaSettingsAttributeName "logLevel"` ddl_logLevel;
+			text -label "" -visible off;
+			attrControlGrp -label "Thread Cap (0=auto):" -a `KrakatoaSettingsAttributeName "threadCount"` int_threadCount;
+			text -label "" -visible off;
+			attrControlGrp -label "Frame Buffer Mem %:" -a `KrakatoaSettingsAttributeName "frameBufferAvailableMemoryFraction"` float_availMemoryFraction;
+		/*setParent ..;
+		gridLayout -numberOfColumns 1 -cellWidthHeight 325 20;*/
+		setParent ..;
+	setParent ..;
+
+	frameLayout -l "Tools" -collapsable true -collapse true KrakatoaUtilitiesLayout;
+		button -label "Generate Birth Channels" -command ("KMY_generateBirthChannels()") btn_generateBirthChannels;
+	setParent ..;
+
+	// EVENT HANDLERS
+
+	button -edit -command ("KMY_tagSelectedAsMatte()") btn_tagSelectedAsMatte;
+	button -edit -command ("KMY_untagSelectedAsMatte()") btn_untagSelectedAsMatte;
+	
+	button -edit -command ("KMY_updateSanityChecks()") btn_updateSanityCheck;
+
+	frameLayout -edit -pec  ("KMY_updateSanityChecks()") KrakatoaSanityChecksLayout;
+	
+	KMY_setControlsVisibility();
+	KMY_updateMemoryCalculator();
+	KMY_updateSanityChecks();
+	
+	int $showInfo = `KMY_getRenderDialogIniKey "RenderDialogSettings" "ShowCollapsedPanelInfo" "1"`;
+	checkBoxGrp -e -value1 $showInfo ddl_collapsedPanelsInfo;
+	KMY_updateKrakatoaRenderSettingTitles();
+	
+	//
+	// End attribute controls
+	//
+	
+	return $rootFormName;
+}
+
+global proc KMY_setRenderDialogIniKey  (string $settingsfile, string $key)
+{
+	string $value = "";
+	int $keylength = `size $key`;
+	
+	//GET the actual value to store - it is acquired implicitly by key name, not passed explicityly as argument!
+	if ($key == "ShowCollapsedPanelInfo") $value = `checkBoxGrp -q -value1 ddl_collapsedPanelsInfo`;
+	
+	string $record = $key + "=" + $value+"\n";
+	
+	string $tmpDir = `internalVar -userPrefDir`;
+	$tmpDir += "Krakatoa/";
+	sysFile  -md $tmpDir;
+	
+	string $IniFile = ($tmpDir+$settingsfile+".cfg");
+	string $dataArray[];
+	if (`filetest -r $IniFile`)
+	{
+		$fileId = `fopen $IniFile "r"`;  
+		string $line;
+		do
+		{
+			$line = `fgetline $fileId`;
+			if ($line != "" && (`substring $line 1 $keylength`) != $key) $dataArray[`size $dataArray`] = $line;
+		}
+		while ( $line != "");
+		fclose $fileId ;
+	}
+	$dataArray[`size $dataArray`] = $record; 
+	string $IniFile2 = ($tmpDir+$settingsfile +".tmp");
+	$fileId2 = `fopen $IniFile2 "w"`;
+	for ($i in $dataArray) 	fprint $fileId2 ($i);
+	fclose $fileId2 ; 
+	sysFile -delete $IniFile;
+	sysFile -rename $IniFile $IniFile2;
+}
+
+global proc string KMY_getRenderDialogIniKey (string $settingsfile, string $key, string $default)
+{
+	string $value = $default; //initialize the return value to the default, in case there is no file or data in the file
+	int $keylength = `size $key`;
+	string $tmpDir = `internalVar -userPrefDir`;
+	$tmpDir += "Krakatoa/";
+	string $IniFile = ($tmpDir+$settingsfile+".cfg");
+	if (`filetest -r $IniFile`) //if the file exists, read from it
+	{
+		$fileId = `fopen $IniFile "r"`;  
+		string $line;
+		do
+		{
+			$line = `fgetline $fileId`;
+			int $linelength = `size $line`;
+			if ($line != "" && (`substring $line 1 $keylength`) == $key) $value = `substring $line ($keylength+2) $linelength`; //if the key is found, read its value
+		}
+		while ( $line != "");
+		fclose $fileId ;
+	}
+	return $value;
+}
+
+global proc string KMY_getMayaParticleFromPRTMayaParticle( string $prtmaya )
+{
+	string $connector = ($prtmaya + "." + "inConnect");
+	string $list[] = `listConnections -p true -s true -d false ( $connector )`;
+	
+	for ($aConnectedObject in $list) {
+		string $entry[];
+		tokenize $aConnectedObject "." $entry;
+		if ( `nodeType $entry[0]` == "particle" || `nodeType $entry[0]` == "nParticle" ) {
+			return $entry[0];
+		}
+	}
+
+	return "";
+}
+
+global proc string KMY_getPRTMayaParticleFromMayaParticle( string $mayapart, int $autocreate )
+{
+	string $connector = ($mayapart + "." + "count");
+	string $list[] = `listConnections -p true -s false -d true ( $connector )`;
+
+	for ($aConnectedObject in $list) {
+		string $entry[];
+		tokenize $aConnectedObject "." $entry;
+		if ( `nodeType $entry[0]` == "PRTMayaParticle" ) {
+			return $entry[0];
+		}
+	}
+
+	if ( $autocreate ) {
+		string $prtwrap = `createNode "PRTMayaParticle" -ss`;
+		connectAttr ( $mayapart + "." + "count" ) ( $prtwrap + "." + "inConnect" );
+		return $prtwrap;
+	}
+	return "";
+}
+
+global proc KMY_wrapMayaParticles ()
+{
+	string $allObjects[];
+	string $anObject;
+
+	//TODO: reconnect if deformers deleted?
+
+	// Delete unconnected wrappers
+	$allObjects = `ls -v -typ "PRTMayaParticle"`;
+	for ($anObject in $allObjects)
+	{
+		string $connectedParticle = `KMY_getMayaParticleFromPRTMayaParticle $anObject`;
+		if ( $connectedParticle == "" ) {
+			delete $anObject;
+		}
+	}
+
+	// Reconnect if deformers were added
+	$allObjects = `ls -v -typ "particle" -typ "nParticle"`;
+	for ($anObject in $allObjects)
+	{
+		string $deformed = `KMY_mayaParticleGetDeformed $anObject`;
+		if ( $deformed != "" ) {
+			string $connectedParticleDeformed = `KMY_getPRTMayaParticleFromMayaParticle $deformed false`;
+			if ( $connectedParticleDeformed == "" ) {
+				string $connectedParticle = `KMY_getPRTMayaParticleFromMayaParticle $anObject true`;
+				print ( "Reconnect " + $anObject + " -> " + $deformed + "\n" );
+				disconnectAttr ( $anObject + "." + "count" ) ( $connectedParticle + "." + "inConnect" );
+				connectAttr ( $deformed + "." + "count" ) ( $connectedParticle + "." + "inConnect" );
+			}
+		}
+	}
+
+	// Add wrappers for unconnected streams
+	$allObjects = `ls -v -typ "particle" -typ "nParticle"`;
+	for ($anObject in $allObjects)
+	{
+		string $deformed = `KMY_mayaParticleGetDeformed $anObject`;
+		if ( $deformed == "" ) {
+			KMY_getPRTMayaParticleFromMayaParticle $anObject true;
+		}
+	}
+}
+
+// This is an attempt to replicate MFnParticleSystem::deformedParticleShape
+global proc string KMY_mayaParticleGetDeformed ( string $mayaprt )
+{
+	string $connections[];
+	string $aConnection;
+	string $nextObject = $mayaprt;
+
+	$connections = `listConnections -p true -s false -d true ($nextObject + "." + "position")`;
+	$nextObject = "";
+
+	// There may be multiple deformers chained together
+	while ( true ) {
+
+		// To Deformer Group
+		for ( $aConnection in $connections ) {
+			string $parts[];
+			tokenize $aConnection "." $parts;
+
+			if ( `nodeType $parts[0]` == "groupParts" && $parts[1] == "inputGeometry" ) {
+				$nextObject = $parts[0];
+				break;
+			}
+
+			// End of the path
+			if ( (`nodeType $parts[0]` == "particle" || `nodeType $parts[0]` == "nParticle") && $parts[1] == "deformedPosition" ) {
+				return $parts[0];
+			}
+		}
+		if ( $nextObject == "" ) return "";
+
+		// To Deformer
+		$connections = `listConnections -p true -s false -d true ($nextObject + "." + "outputGeometry")`;
+		$nextObject = "";
+		for ( $aConnection in $connections ) {
+			string $parts[];
+			tokenize $aConnection "." $parts;
+
+			if ( `nodeType $parts[0]` == "nonLinear" ) {
+				$nextObject = $parts[0];
+				break;
+			}
+		}
+		if ( $nextObject == "" ) return "";
+
+		$connections = `listConnections -p true -s false -d true ($nextObject + "." + "outputGeometry")`;
+		$nextObject = "";
+	}
+
+	return $nextObject;
+}
+
+// This is an attempt to replicate MFnParticleSystem::originalParticleShape
+global proc string KMY_mayaParticleGetOriginal ( string $mayaprt )
+{
+	string $connections[];
+	string $aConnection;
+	string $nextObject = $mayaprt;
+
+	$connections = `listConnections -p true -s true -d false ($nextObject + "." + "deformedPosition")`;
+	$nextObject = "";
+
+	// There may be multiple deformers chained together
+	while ( true ) {
+	
+		// To Deformer
+		for ( $aConnection in $connections ) {
+			string $parts[];
+			tokenize $aConnection "." $parts;
+
+			if ( `nodeType $parts[0]` == "nonLinear" ) {
+				$nextObject = $parts[0];
+				break;
+			}
+
+			// End of the path
+			if ( (`nodeType $parts[0]` == "particle" || `nodeType $parts[0]` == "nParticle") && $parts[1] == "position" ) {
+				return $parts[0];
+			}
+		}
+		if ( $nextObject == "" ) return "";
+
+		// To Deformer Group
+		$connections = `listConnections -p true -s true -d false ($nextObject + "." + "input")`;
+		$nextObject = "";
+		for ( $aConnection in $connections ) {
+			string $parts[];
+			tokenize $aConnection "." $parts;
+			
+			if ( `nodeType $parts[0]` == "groupParts" && $parts[1] == "outputGeometry" ) {
+				$nextObject = $parts[0];
+				break;
+			}
+		}
+		if ( $nextObject == "" ) return "";
+
+
+		$connections = `listConnections -p true -s true -d false ($nextObject + "." + "inputGeometry")`;
+		$nextObject = "";
+	}
+
+	return $nextObject;
+}
+
+global proc KMY_forceObjectReevaluate( string $particleObj ) {
+	//Hack alert! We need to force a re-evaulation. let's come up with a better way than to hard-code a setting of each of our PRT types. this is bad.
+	//Currently we're just touching one of the attributes affecting the outSentinel.
+	//Note: we're not using dgdirty anymore. It dirties all output plugs. It doesn't work for PRTFractals, and it causes infinite loops for modifiers with texture connections.
+	string $objType = objectType( $particleObj );
+	if( $objType == "PRTLoader" ) {
+		setAttr( $particleObj + ".inViewportParticlePercent", getAttr( $particleObj + ".inViewportParticlePercent" ) );
+	} else if( $objType == "PRTVolume" ) {
+		setAttr( $particleObj + ".inViewportParticlePercent", getAttr( $particleObj + ".inViewportParticlePercent" ) );
+	} else if( $objType == "PRTSurface" ) {
+		setAttr( $particleObj + ".inViewportParticlePercent", getAttr( $particleObj + ".inViewportParticlePercent" ) );
+	} else if( $objType == "PRTFractal" ) {
+		setAttr( $particleObj + ".inViewportParticleCount", getAttr( $particleObj + ".inViewportParticleCount" ) );
+	} else if( $objType == "PRTMagma" || $objType == "PRTModifier" ) {
+		string $list[] = `listConnections -p true -s true -d false ( $particleObj + "." + "inParticleStream" )`;
+		if ( `size $list` > 0 && `size $list[0]` > 0 ) {
+			string $entry[];
+			tokenize $list[0] "." $entry;
+			KMY_forceObjectReevaluate $entry[0];
+		}
+	}
+}
+
+global proc KMY_generateBirthChannels() {
+	python("import MayaBirthChannelGenerator");
+	python("MayaBirthChannelGenerator.OpenBirthChannelGeneratorDialog();");
+}
+
+global proc KMY_showNoticesDialog() {
+	python( "import KrakatoaNoticesDialog; KrakatoaNoticesDialog.open_kmy_notices_dialog()" );
+}

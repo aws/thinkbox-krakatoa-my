@@ -1,0 +1,5 @@
+BitRockInstaller/MayaKrakatoa_*.xml
+build
+__pycache__
+KrakatoaVersion.h
+third_party_licenses.txt

@@ -1,0 +1,256 @@
+// Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
+////////////////////////////////////
+// Attribute Editor Template for the PRTFractal Node
+//
+// Written By: Grant Bartel
+// Thinkbox Software Inc.
+// 2012
+///////////////////////////////////
+
+global proc AEPRTFractalTemplate( string $nodeName ) {
+	string $name = $nodeName;
+	editorTemplate -beginScrollLayout;
+	editorTemplate -beginLayout "Fractal Settings" -collapse 0;
+		editorTemplate -label "Render Particle Count" -addControl "inRenderParticleCount";
+		editorTemplate -label "Viewport Particle Count" -addControl "inViewportParticleCount";
+		//make custom sliders for the colors since default has extra buttons not necessary
+		editorTemplate -callCustom "MakeColorSliders" "UpdateColorSliders" "";
+	editorTemplate -endLayout;
+
+	editorTemplate -beginLayout "Quick Design Generation" -collapse 0;
+		editorTemplate -label "Affine Transformation Count" -addControl "inAffineTransformationCount";
+		editorTemplate -label "Random Seed" -addControl "inFractalRandomSeed";
+		editorTemplate -callCustom "MakeRandomizeButton" "UpdateRandomizeButton" "";
+		editorTemplate -callCustom "MakeKeyButton" "UpdateRandomizeButton" "";
+		editorTemplate -callCustom "MakeEditorButton" "UpdateEditorButton" "";
+	editorTemplate -endLayout;
+
+	// Unless an attribute is manually supressed, maya will automatically fill in all remaining attributes at the bottom of the attribute editor panel.
+	// This was generated mostly from a call to `listAttr $nodeName`;
+	string $toSuppress[] = { 
+	"inMayaMagma", "message", "caching", "isHistoricallyInteresting", "nodeState", "binMembership", "hyperLayout", "isCollapsed", "blackBox", "borderConnections", "isHierarchicalConnection", "publishedNodeInfo",
+	"publishedNodeInfo.publishedNode", "publishedNodeInfo.isHierarchicalNode", "publishedNodeInfo.publishedNodeType", "rmbCommand", "templateName", "templatePath", "viewName", "iconName", "viewMode",
+	"templateVersion", "uiTreatment", "customTreatment", "creator", "creationDate", "containerType", "boundingBox", "boundingBoxMin", "boundingBoxMinX", "boundingBoxMinY", "boundingBoxMinZ", "boundingBoxMax",
+	"boundingBoxMaxX", "boundingBoxMaxY", "boundingBoxMaxZ", "boundingBoxSize", "boundingBoxSizeX", "boundingBoxSizeY", "boundingBoxSizeZ", "center", "boundingBoxCenterX", "boundingBoxCenterY",
+	"boundingBoxCenterZ", "matrix", "inverseMatrix", "worldMatrix", "worldInverseMatrix", "parentMatrix", "parentInverseMatrix", "visibility", "intermediateObject", "template", "ghosting", "instObjGroups",
+	"instObjGroups.objectGroups", "instObjGroups.objectGroups.objectGrpCompList", "instObjGroups.objectGroups.objectGroupId", "instObjGroups.objectGroups.objectGrpColor", "useObjectColor", "objectColor",
+	"drawOverride", "overrideDisplayType", "overrideLevelOfDetail", "overrideShading", "overrideTexturing", "overridePlayback", "overrideEnabled", "overrideVisibility", "overrideColor", "lodVisibility",
+	"renderInfo", "identification", "layerRenderable", "layerOverrideColor", "renderLayerInfo", "renderLayerInfo.renderLayerId", "renderLayerInfo.renderLayerRenderable", "renderLayerInfo.renderLayerColor",
+	"ghostingControl", "ghostCustomSteps", "ghostPreSteps", "ghostPostSteps", "ghostStepSize", "ghostFrames", "ghostRangeStart", "ghostRangeEnd", "ghostDriver", "renderType", "renderVolume", "visibleFraction",
+	"motionBlur", "visibleInReflections", "visibleInRefractions", "castsShadows", "receiveShadows", "maxVisibilitySamplesOverride", "maxVisibilitySamples", "geometryAntialiasingOverride", "antialiasingLevel",
+	"shadingSamplesOverride", "shadingSamples", "maxShadingSamples", "volumeSamplesOverride", "volumeSamples", "depthJitter", "ignoreSelfShadowing", "primaryVisibility", "referenceObject", "compInstObjGroups",
+	"compInstObjGroups.compObjectGroups", "compInstObjGroups.compObjectGroups.compObjectGrpCompList", "compInstObjGroups.compObjectGroups.compObjectGroupId", "tweak", "relativeTweak", "controlPoints"
+	, "controlPoints.xValue", "controlPoints.yValue", "controlPoints.zValue", "weights", "tweakLocation", "blindDataNodes", "uvPivot", "uvPivotX", "uvPivotY", "uvSet", "uvSet.uvSetName", "uvSet.uvSetPoints",
+	"uvSet.uvSetPoints.uvSetPointsU", "uvSet.uvSetPoints.uvSetPointsV", "uvSet.uvSetTweakLocation", "currentUVSet", "displayImmediate", "displayColors", "displayColorChannel", "currentColorSet", "colorSet",
+	"colorSet.colorName", "colorSet.clamped", "colorSet.representation", "colorSet.colorSetPoints", "colorSet.colorSetPoints.colorSetPointsR", "colorSet.colorSetPoints.colorSetPointsG",
+	"colorSet.colorSetPoints.colorSetPointsB", "colorSet.colorSetPoints.colorSetPointsA", "ignoreHwShader", "doubleSided", "opposite", "smoothShading", "boundingBoxScale", "boundingBoxScaleX", "boundingBoxScaleY",
+	"boundingBoxScaleZ", "featureDisplacement", "initialSampleRate", "extraSampleRate", "textureThreshold", "normalThreshold", "displayHWEnvironment", "collisionOffsetVelocityIncrement",
+	"collisionOffsetVelocityIncrement.collisionOffsetVelocityIncrement_Position", "collisionOffsetVelocityIncrement.collisionOffsetVelocityIncrement_FloatValue",
+	"collisionOffsetVelocityIncrement.collisionOffsetVelocityIncrement_Interp", "collisionDepthVelocityIncrement", "collisionDepthVelocityIncrement.collisionDepthVelocityIncrement_Position",
+	"collisionDepthVelocityIncrement.collisionDepthVelocityIncrement_FloatValue", "collisionDepthVelocityIncrement.collisionDepthVelocityIncrement_Interp", "collisionOffsetVelocityMultiplier",
+	"collisionOffsetVelocityMultiplier.collisionOffsetVelocityMultiplier_Position", "collisionOffsetVelocityMultiplier.collisionOffsetVelocityMultiplier_FloatValue",
+	"collisionOffsetVelocityMultiplier.collisionOffsetVelocityMultiplier_Interp", "collisionDepthVelocityMultiplier", "collisionDepthVelocityMultiplier.collisionDepthVelocityMultiplier_Position",
+	"collisionDepthVelocityMultiplier.collisionDepthVelocityMultiplier_FloatValue", "collisionDepthVelocityMultiplier.collisionDepthVelocityMultiplier_Interp", "inAffineTransformationCount", "inRenderParticleCount",
+	"inViewportParticleCount", "inFractalRandomSeed", "inStartColor", "inStartColor0", "inStartColor1", "inStartColor2", "inEndColor", "inEndColor0", "inEndColor1", "inEndColor2", "inTime", "inViewportDisplayMode",
+	"outSentinel", "outSingleSimpleRenderFile", "outNumParticlesOnDisk", "outNumParticlesInRender", "outNumParticlesInViewport", "ghostColorPreA", "ghostColorPre", "ghostColorPostA", "ghostColorPost"};
+    
+	// manually supress each such item
+	for ( $value in $toSuppress)
+		editorTemplate -suppress $value;
+	int $i=0;
+	for( $i = 0; $i < 10; ++$i ) {
+		editorTemplate -suppress ( "inPosX" + $i );
+		editorTemplate -suppress ( "inPosY" + $i );
+		editorTemplate -suppress ( "inPosZ" + $i );
+		editorTemplate -suppress ( "inRotX" + $i );
+		editorTemplate -suppress ( "inRotY" + $i );
+		editorTemplate -suppress ( "inRotZ" + $i );
+		editorTemplate -suppress ( "inRotW" + $i );
+		editorTemplate -suppress ( "inScaleX" + $i );
+		editorTemplate -suppress ( "inScaleY" + $i );
+		editorTemplate -suppress ( "inScaleY" + $i );
+		editorTemplate -suppress ( "inScaleZ" + $i );
+		editorTemplate -suppress ( "inSkewX" + $i );
+		editorTemplate -suppress ( "inSkewY" + $i );
+		editorTemplate -suppress ( "inSkewZ" + $i );
+		editorTemplate -suppress ( "inSkewW" + $i );
+		editorTemplate -suppress ( "inSkewA" + $i );
+		editorTemplate -suppress ( "inWeight" + $i );
+	}
+	editorTemplate -addExtraControls;
+	editorTemplate -endScrollLayout;
+}
+
+global proc createFractalRow( int $count, string $node ) {
+	string $labelText = $count + ":";
+	
+	string $labelName = "lbl_row" + $count;
+	
+	rowLayout -numberOfColumns 17 -width 850 -cw 1 20;
+		text -label ( $count + ":" );
+		addAttributeField( $count, $node, "inPosX" );
+		addAttributeField( $count, $node, "inPosY" );
+		addAttributeField( $count, $node, "inPosZ" );
+		addAttributeField( $count, $node, "inRotX" );
+		addAttributeField( $count, $node, "inRotY" );
+		addAttributeField( $count, $node, "inRotZ" );
+		addAttributeField( $count, $node, "inRotW" );
+		addAttributeField( $count, $node, "inScaleX" );
+		addAttributeField( $count, $node, "inScaleY" );
+		addAttributeField( $count, $node, "inScaleZ" );
+		addAttributeField( $count, $node, "inSkewX" );
+		addAttributeField( $count, $node, "inSkewY" );
+		addAttributeField( $count, $node, "inSkewZ" );
+		addAttributeField( $count, $node, "inSkewW" );
+		addAttributeField( $count, $node, "inSkewA" );
+		addAttributeField( $count, $node, "inWeight" );	
+	setParent ..;	
+}
+
+global proc addAttributeField( int $count,string $node, string $attr ) {
+	string $spinner;
+	$attr = getAttrName( $attr, $count );
+	$spinner = "spin_" + $attr;
+	floatField -w 50 $spinner;
+	connectControl $spinner( $node + "." + $attr);
+	
+}
+global proc string getAttrName( string $attr,int $count ) {
+	return $attr + $count;
+}
+
+global proc string getAttrSpinnerName( string $attr ) {
+	return "flt_" + $attr;
+}
+global proc createAdditionalAttributes( string $node ) {
+	int $count = `getAttr $node.inAffineTransformationCount`;
+	int $i;
+	
+	for( $i = 0; $i < $count; ++$i )
+	{
+		createFractalRow( $i, $node );
+	}
+}
+
+
+global proc MakeEditorButton( string $node ) {
+	button -label "Open Fractal Design Parameter Editor" editorButton;
+	UpdateEditorButton( $node );
+}
+
+global proc MakeRandomizeButton( string $node ) {
+	button -label "Create Random Fractal" randomizeButton;
+	UpdateRandomizeButton( $node );
+}
+
+global proc UpdateRandomizeButton( string $node ) {
+	string $buffer[];
+	tokenize $node "." $buffer;
+	
+	button -e -c ( "Randomize \"" + $buffer[0] + "\"" ) randomizeButton;
+}
+
+global proc MakeColorSliders( string $node ) {
+	colorSliderGrp -label "Color Gradient Begin" initialColorSlider;
+	colorSliderGrp -label "Color Gradient End" endColorSlider;
+	UpdateColorSliders( $node );
+}
+
+global proc UpdateColorSliders( string $node ) {
+	string $buffer[];
+	tokenize $node "." $buffer;
+	
+	connectControl initialColorSlider ( $buffer[0] + ".inStartColor" );
+	connectControl endColorSlider ( $buffer[0] + ".inEndColor" );
+}
+
+global proc MakeKeyButton( string $node ) {
+	button -label "Add Fractal Keyframes at Current Time" keyButton;
+	UpdateKeyButton( $node );
+}
+
+global proc UpdateKeyButton( string $node ) {
+	string $buffer[];
+	tokenize $node "." $buffer;
+	
+	button -e -c ( "SetKey \"" + $buffer[0] + "\"" ) keyButton;
+}
+
+global proc SetKey( string $node ) {
+	string $switch = `setFocus keyButton`;
+	AddFractalTransformKeyframes -node $node;
+}
+
+global proc Randomize( string $node ) {
+	string $switch = `setFocus randomizeButton`;
+	int $seed = `getAttr $node.inFractalRandomSeed`;
+	int $count = `getAttr $node.inAffineTransformationCount`;
+	RandomizeFractals -seed $seed -count $count -node $node;
+	string $windowName = "fractalEditorWindow"; 
+	if( `window -exists $windowName` )
+		if( `window -q -visible $windowName` ) {
+			deleteUI -window $windowName;
+			window $windowName;
+			PopulateEditorDialog( $node );
+		}
+}
+
+global proc UpdateEditorButton( string $node ) {
+	string $buffer[];
+	tokenize $node "." $buffer;
+	
+	button -e -c ( "OpenEditorDialog \"" + $buffer[0] + "\"" ) editorButton;
+}
+
+global proc OpenEditorDialog( string $node ) {
+	//layoutDialog -ui ( "PopulateEditorDialog(\"" + $node + "\" );" );
+	string $windowName = "fractalEditorWindow"; 
+	if( `window -exists $windowName` )
+		deleteUI -window $windowName;
+	window $windowName;
+	PopulateEditorDialog( $node );
+}
+
+global proc PopulateEditorDialog( string $node ) {
+	int $windowWidth = 870;
+	int $windowHeight = 50;
+	
+	int $labelWidth = 110;
+	int $controlWidth = 320;
+	string $windowName = "fractalEditorWindow"; 
+	global string $gMainWindow;
+	
+	int $mainTopLeft[] = `window -q -tlc $gMainWindow`;
+	window -e -resizeToFitChildren true -sizeable true -title "Edit Fractal Transformations" -width ( $windowWidth + 8 ) -tlc ( $mainTopLeft[0] + 50 ) ( $mainTopLeft[1] + 50 ) $windowName;
+	formLayout -width ( $windowWidth + 16 ) -nd 100 mainFormLayout;
+	columnLayout -adj true -columnAttach "both" 4 -rowSpacing 4 mainLayout;
+		rowLayout -numberOfColumns 17 -width 850 -cw 1 20;
+			text -label ( "" );
+			text -label "Pos X" -width 50;
+			text -label "Pos Y" -width 50;
+			text -label "Pos Z" -width 50;
+			text -label "Rot X" -width 50;
+			text -label "Rot Y" -width 50;
+			text -label "Rot Z" -width 50;
+			text -label "Rot W" -width 50;
+			text -label "Scale X" -width 50;
+			text -label "Scale Y" -width 50;
+			text -label "Scale Z" -width 50;
+			text -label "Skew X" -width 50;
+			text -label "Skew Y" -width 50;
+			text -label "Skew Z" -width 50;
+			text -label "Skew W" -width 50;
+			text -label "Skew A" -width 50;
+			text -label "Weight" -width 50;
+		setParent ..;
+		string $test = `createAdditionalAttributes $node`;
+	setParent ..;
+
+	formLayout -e
+		-af mainLayout top 5
+		-af mainLayout left 5
+	mainFormLayout;
+	
+	showWindow $windowName;
+}

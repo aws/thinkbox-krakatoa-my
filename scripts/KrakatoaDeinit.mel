@@ -1,0 +1,5 @@
+// Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
+// I believe this is all that is needed to kill a renderer
+
+renderer -unregisterRenderer MayaKrakatoa;

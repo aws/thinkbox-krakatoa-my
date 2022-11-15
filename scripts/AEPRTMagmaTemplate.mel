@@ -1,0 +1,53 @@
+// Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
+////////////////////////////////////
+// Attribute Editor Template for the Magma Node
+//
+// Written By: Matthew Yu
+// Thinkbox Software Inc.
+// 2013
+///////////////////////////////////
+
+global proc AEPRTMagmaTemplate( string $nodeName ) {
+
+	editorTemplate -beginScrollLayout;
+
+	editorTemplate -beginLayout "Magma" -collapse false;
+		editorTemplate -label "Enabled" -addControl "inEnabled";
+
+		//Magma Editor is supported for MAYA_VERSION > 2011
+		float $version = `getApplicationVersionAsFloat`;
+		if( $version > 2011 )
+		{
+			gridLayout -nc 2;
+				editorTemplate -callCustom "KrakatoaPRTMagmaMakeMagmaFluxButton" "KrakatoaPRTMagmaUpdateMagmaFluxButton" "magmaflux";
+			setParent ..;
+		}
+	editorTemplate -endLayout;
+	
+	// To Suppress
+	string $toSuppress[] = { /*"caching", "nodeState",*/ "inMayaMagma" };
+    
+	// manually supress each such item
+	for ($value in $toSuppress)
+		editorTemplate -suppress $value;
+
+	editorTemplate -addExtraControls;
+
+	editorTemplate -endScrollLayout;
+}
+
+global proc KrakatoaPRTMagmaMakeMagmaFluxButton ( string $node )
+{
+	button -label "Open Magma Editor..." LoadMagmaFLUXButton;
+	
+	KrakatoaPRTMagmaUpdateMagmaFluxButton $node;
+}
+
+global proc KrakatoaPRTMagmaUpdateMagmaFluxButton (string $node )
+{
+	string $buffer[];
+	tokenize $node "." $buffer;
+	button -e -c ("OpenMagmaFLUXDialog " + $buffer[0]) LoadMagmaFLUXButton;
+}
+

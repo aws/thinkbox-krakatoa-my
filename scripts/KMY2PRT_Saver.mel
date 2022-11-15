@@ -1,0 +1,1867 @@
+// Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
+
+////////////////////////////////////////////////////////////
+//This is a Reference implementation of a Krakatoa MY exporter to PRT.
+//It includes SAVING and PARTITIONING particle sources.
+//It was originally developed in Maya 2012 on Windows.
+//Please feel free to use it as a starting point for your own exporters.
+////////////////////////////////////////////////////////////
+
+//USEFUL FUNCTIONS
+proc string pathpart( string $path )
+{
+	$path =  substituteAllString ($path, "\\", "/");
+	string $dir = match( "^.*/", $path );
+
+	int $sz = size( $dir );
+	if ( ( $sz > 1 ) && ( substring( $dir, $sz, $sz ) == "/" ) ) {
+		$dir = substring( $dir, 1, ($sz - 1) );
+	}
+	return $dir;
+}
+
+// any maya before 2013 does not have this function, 
+proc int _stringArrayFind( string $key, int $begin, string $list[] )
+{
+    int $retval = -1;
+    for( $curPos = $begin; $curPos < size($list); $curPos++) {
+        if( $list[$curPos] == $key ) {
+            $retval = $curPos;
+        }
+    }
+    return $retval;
+}
+
+proc string purifyname (string $path)
+{
+	string $returnvalue = $path;
+	//string $returnvalue = substituteAllString ($returnvalue, "\:", "_");
+	$returnvalue = substituteAllString ($returnvalue, "|", "_");
+	return $returnvalue;
+}
+
+
+
+// Returns the name of the settings node, but more importantly, makes sure it exists in the scene
+proc string getSettingsNode()
+{
+	global string $nodeName = "ksr_exporter_ui_settings_node";
+	
+	if (!`objExists $nodeName`)
+	{
+		createNode -name $nodeName -skipSelect "ksr_exporter_ui_settings_node";
+	}
+	
+	return $nodeName;
+}
+
+// utility method to get full name of a node's attribute
+proc string getSettingsNodeAttribute(string $name)
+{
+	return `getSettingsNode` + "." + $name;
+}
+
+// These are the methods you want to use to save the settings.
+// They are mostly trivial, they exist just to encapsulate the rest of the code from the
+// underlying way file-speicific data is stored/retrieved
+proc int fileInfoExists (string $name)
+{
+	return attributeExists($name, `getSettingsNode`);
+}
+
+proc string getStringFileInfo (string $name)
+{
+	string $attribute = getSettingsNodeAttribute($name);
+	return `getAttr $attribute`;
+}
+
+proc int getIntFileInfo (string $name)
+{
+	string $attribute = getSettingsNodeAttribute($name);
+	return `getAttr $attribute`;
+}
+
+proc float getFloatFileInfo (string $name)
+{
+	string $attribute = getSettingsNodeAttribute($name);
+	return `getAttr $attribute`;
+}
+
+proc saveIntFileInfo (string $name, int $value)
+{
+	if (!`fileInfoExists $name`)
+	{
+		addAttr -longName $name -at long `getSettingsNode`;
+	}
+	
+	setAttr (`getSettingsNodeAttribute $name`) $value;
+}
+
+proc saveFloatFileInfo (string $name, float $value)
+{
+	if (!`fileInfoExists $name`)
+	{
+		addAttr -longName $name -at "float" `getSettingsNode`;
+	}
+	
+	setAttr (`getSettingsNodeAttribute $name`) $value;
+}
+
+proc saveStringFileInfo (string $name, string $value)
+{
+	if (!`fileInfoExists $name`)
+	{
+		addAttr -longName $name -dt "string" `getSettingsNode`;
+	}
+	
+	setAttr -type "string" (`getSettingsNodeAttribute $name`) $value;
+}
+
+/*
+ * Helper Functions relating to Deadline Saving
+ */
+
+// Helper method to convert a string into a string representation inside a mel script
+// Prepends/Appends double quotes and escapes special characters
+proc string stringToString (string $val)
+{
+	string $result = "\"";
+	for( $i = 1; $i <= `size $val`; $i = $i + 1 ){
+		string $current = `substring $val $i $i`;
+		if( $current == "\n" )
+			$current = "\\n";
+		else if( $current == "\r" )
+			$current = "\\r";
+		else if( $current == "\t" )
+			$current = "\\t";
+		else if( $current == "\\" )
+			$current = "\\\\";
+		else if( $current == "\"" )
+			$current = "\\\"";
+
+		$result = ($result + $current);
+	}
+	$result = ($result + "\"");
+	return $result;
+}
+
+// Helper method to convert an string array into a string representation inside a mel script
+// Prepends/Appends curlies and separate elements with commas
+proc string arrayToString (string $arr[])
+{
+	string $result = "{";
+	int $first = 1;
+	for($element in $arr)
+		if( $first ){
+			$result = ($result + `stringToString $element`);
+			$first = 0;
+		} else
+			$result = ($result + "," + `stringToString $element`);
+
+	$result = ($result + "}");
+	return $result;
+}
+
+// Helper method to check if scene needs to be saved before sending to Deadline
+// This function only works with Maya 2013 and up. ("ls -mod" was not supported before that).
+proc int deadlineRequiresSave ()
+{
+	string $changes[] = `ls -mod`;
+	
+	string $thisNode = getSettingsNode();
+	for( $element in $changes )
+	{
+		if( $element != $thisNode )
+			return 1;
+	}
+	return 0;
+}
+
+// Gets the folder to place particle files in
+global proc string KMY2PRT_getOutputFolder ()
+{
+	string $outputBaseFolder = `workspace -q -fn`;
+	$outputBaseFolder = $outputBaseFolder + "/PRT/";
+	return $outputBaseFolder;
+}
+
+// Gets the deadlinecommand command string
+proc string getDeadlineCommand()
+{
+	string $deadlineInstallPath = "";
+
+	string $osName = `about -os`;
+	if( `substring $osName 1 3` == "mac" ) {
+		string $savedPathFilename = "/Users/Shared/Thinkbox/DEADLINE_PATH";
+		if( `filetest -r $savedPathFilename` ) {
+			$savedPathFile = `fopen $savedPathFilename "r"`; //open the file and extract the proper location for the deadlinecommand.
+			$deadlineInstallPath = `fgetline $savedPathFile`;
+			$deadlineInstallPath = `strip $deadlineInstallPath`;
+			fclose $savedPathFile;
+		}
+	} else {
+		$deadlineInstallPath = `getenv "DEADLINE_PATH"`;
+	}
+
+	if( $deadlineInstallPath != "" ) {
+		//flips the backslashes to forward slashes
+		if( `substring $osName 1 3` == "win" )
+			$deadlineInstallPath = `fromNativePath $deadlineInstallPath`;
+
+		//add trailing backslash if needed
+		if( !`endsWith $deadlineInstallPath "/"` )
+			$deadlineInstallPath = $deadlineInstallPath + "/";
+		
+		//add executable name
+		$deadlineInstallPath = $deadlineInstallPath + "deadlinecommand";
+
+		//add windows exe extension
+		if( `substring $osName 1 3` == "win" )
+			$deadlineInstallPath = $deadlineInstallPath + ".exe";
+
+		//do a final test to see if this file actually exists and is executable
+		if( !`filetest -x $deadlineInstallPath` )
+			return "";
+	
+		//windows requires we wrap the path in quotations to preserve the spaces in the path
+		if( `substring $osName 1 3` == "win" )
+			$deadlineInstallPath = "\"" + $deadlineInstallPath + "\"";
+	}
+	
+	return $deadlineInstallPath;
+}
+
+// Checks if deadlinecommand is installed
+proc int isDeadlineInstalled()
+{
+	string $deadlineCommand = getDeadlineCommand();
+	if( $deadlineCommand == "" )
+		return 0;
+	return 1;
+}
+
+// Helper method to get the list of groups available in Deadline
+proc string[] getDeadlineGroups ()
+{
+	string $deadlinecmd = getDeadlineCommand();
+	string $result = `system($deadlinecmd + " GetGroupNames")`;
+
+	string $choices[];
+	int $count = `tokenize $result "\r\n" $choices`;
+	if( $count == 0 )
+		return {"none"};
+	return $choices;
+}
+
+// Helper method to get the list of pools available in Deadline
+proc string[] getDeadlinePools ()
+{
+	string $deadlinecmd = getDeadlineCommand();
+	string $result = `system($deadlinecmd + " GetPoolNames")`;
+
+	string $choices[];
+	int $count = `tokenize $result "\r\n" $choices`;
+	if( $count == 0 )
+		return {"none"};
+	return $choices;
+}
+
+// Sanity Check for exportToPRT
+proc int exportToPRT_SanityCheck (string $objectsToSave[], int $saveMode)
+{
+	if ($saveMode ==  1) 
+	{
+		// One Sequence
+		return 1;
+	}
+
+	string $anObject;
+	for ($anObject in $objectsToSave)
+	{
+		string $theNodeType = `nodeType $anObject`;
+		
+		// When partitioning any node type that is not a PRTFractal or a PRTLoader will get a random seed
+		if ($theNodeType != "PRTFractal" && $theNodeType != "PRTLoader")
+		{
+			return true;
+		}
+	}//end anObject loop
+	
+	$response = `confirmDialog -title "Warning" 
+			              -message "Warning: No partitionable particle systems were found in the scene. Do you wish to continue?\n\nNote: Only dynamic systems such as Maya's particle and nParticle systems can be partitioned. Pre-saved file sequences such as imported RealFlow simulations are non-dynamic and cannot be procedurally partitioned."
+			              -button "Yes"
+						  -button "No"
+			              -defaultButton "No"
+			              -cancelButton "NO"
+			              -dismissString "NO"`;
+	if( $response == "Yes" ){
+		return 1;
+	} else {
+		return 0;
+	}
+}
+
+
+//SAVING ALL SETTINGS 
+global proc KMY2PRT_saveSettings ()
+{
+	//GLOBAL VALUES
+	
+	saveIntFileInfo kmy2prt_chk_saveChannelVelocity (`checkBox -q -v chk_saveChannelVelocity`);	
+	saveIntFileInfo kmy2prt_chk_saveChannelColor (`checkBox -q -v chk_saveChannelColor`);	
+	saveIntFileInfo kmy2prt_chk_saveChannelDensity (`checkBox -q -v chk_saveChannelDensity`);	
+	saveIntFileInfo kmy2prt_chk_saveChannelID (`checkBox -q -v chk_saveChannelID`);	
+	saveIntFileInfo kmy2prt_chk_saveChannelNormal (`checkBox -q -v chk_saveChannelNormal`);	
+	saveIntFileInfo kmy2prt_chk_saveChannelRotation (`checkBox -q -v chk_saveChannelRotation`);	
+	saveIntFileInfo kmy2prt_chk_saveChannelEmission (`checkBox -q -v chk_saveChannelEmission`);	
+	
+	saveIntFileInfo kmy2prt_chk_saveChannelAge (`checkBox -q -v chk_saveChannelAge`);	
+	saveIntFileInfo kmy2prt_chk_saveChannelLifeSpan (`checkBox -q -v chk_saveChannelLifeSpan`);	
+	
+	saveIntFileInfo kmy2prt_ddl_saveChannelVelocityFormat (`optionMenu -q -select ddl_saveChannelVelocityFormat`);	
+	saveIntFileInfo kmy2prt_ddl_saveChannelColorFormat (`optionMenu -q -select ddl_saveChannelColorFormat`);	
+	saveIntFileInfo kmy2prt_ddl_saveChannelDensityFormat (`optionMenu -q -select ddl_saveChannelDensityFormat`);	
+	saveIntFileInfo kmy2prt_ddl_saveChannelIDFormat (`optionMenu -q -select ddl_saveChannelIDFormat`);	
+	saveIntFileInfo kmy2prt_ddl_saveChannelNormalFormat (`optionMenu -q -select ddl_saveChannelNormalFormat`);	
+	saveIntFileInfo kmy2prt_ddl_saveChannelRotationFormat (`optionMenu -q -select ddl_saveChannelRotationFormat`);	
+	saveIntFileInfo kmy2prt_ddl_saveChannelEmissionFormat (`optionMenu -q -select ddl_saveChannelEmissionFormat`);	
+
+	saveIntFileInfo kmy2prt_ddl_saveChannelAgeFormat (`optionMenu -q -select ddl_saveChannelAgeFormat`);	
+	saveIntFileInfo kmy2prt_ddl_saveChannelLifeSpanFormat (`optionMenu -q -select ddl_saveChannelLifeSpanFormat`);	
+
+	saveIntFileInfo kmy2prt_ddl_exportAnimation (`optionMenu -q -select ddl_exportAnimation`);	
+	saveIntFileInfo kmy2prt_chk_saveMode (`checkBox -q -v chk_saveMode`);
+	
+	saveIntFileInfo kmy2prt_int_partitionsCount (`intSliderGrp -q -v int_partitionsCount`);	
+	
+	saveIntFileInfo kmy2prt_chk_partitionSubRange (`checkBox -q -v chk_partitionSubRange`);
+	saveIntFileInfo kmy2prt_int_fromPartition (`intSliderGrp -q -v int_fromPartition`);	
+	saveIntFileInfo kmy2prt_int_toPartition (`intSliderGrp -q -v int_toPartition`);	
+	
+	saveIntFileInfo kmy2prt_chk_incrementRandomSeeds (`checkBox -q -v chk_incrementRandomSeeds`);	
+	saveIntFileInfo kmy2prt_chk_randomizeParticleChannels (`checkBox -q -v chk_randomizeParticleChannels`);	
+	
+	saveIntFileInfo kmy2prt_chk_randomizeChannelPosition (`checkBox -q -v chk_randomizeChannelPosition`);	
+	saveIntFileInfo kmy2prt_chk_randomizeChannelVelocity (`checkBox -q -v chk_randomizeChannelVelocity`);
+	
+	saveIntFileInfo kmy2prt_chk_deadlineSubmit (`checkBox -q -v chk_deadlineSubmit`);
+	
+	saveFloatFileInfo kmy2prt_flt_randomizeChannelPositionRadius (`floatSliderGrp -q -v flt_randomizeChannelPositionRadius`);	
+	saveFloatFileInfo kmy2prt_flt_randomizeChannelVelocityRadius (`floatSliderGrp -q -v flt_randomizeChannelVelocityRadius`);	
+	
+	saveIntFileInfo kmy2prt_ddl_verbosityLevel (`optionMenu -q -select ddl_verbosityLevel`);
+
+	saveIntFileInfo kmy2prt_ddl_saveFileFormat (`optionMenu -q -select ddl_saveFileFormat`);
+	
+	//FRAME COLLAPSE
+	saveIntFileInfo kmy2prt_PRTOutputLayout (`frameLayout -q -cl PRTOutputLayout`);	
+	saveIntFileInfo kmy2prt_PRTChannelSettingsLayout (`frameLayout -q -cl PRTChannelSettingsLayout`);	
+	saveIntFileInfo kmy2prt_PRTPartitionSettingsLayout (`frameLayout -q -cl PRTPartitionSettingsLayout`);	
+	saveIntFileInfo kmy2prt_PRTPreferencesLayout (`frameLayout -q -cl PRTPreferencesLayout`);	
+	
+
+	
+	saveStringFileInfo kmy2prt_txt_outputBasePath (`textField -q -text txt_outputBasePath`);
+	saveStringFileInfo kmy2prt_txt_outputFolder (`textField -q -text txt_outputFolder`);
+	saveStringFileInfo kmy2prt_txt_outputVersionFolder (`textField -q -text txt_outputVersionFolder`);
+	saveStringFileInfo kmy2prt_txt_filePrefix (`textField -q -text txt_filePrefix`);
+}
+
+//RESTORING ALL SETTINGS 
+proc KMY2PRT_loadSettings ()
+{
+	//GLOBAL VALUES	
+
+	if ( `fileInfoExists kmy2prt_chk_saveChannelVelocity` ) checkBox -edit -v (`getIntFileInfo kmy2prt_chk_saveChannelVelocity`) chk_saveChannelVelocity;
+	if ( `fileInfoExists kmy2prt_chk_saveChannelColor` ) checkBox -edit -v (`getIntFileInfo kmy2prt_chk_saveChannelColor`) chk_saveChannelColor;
+	if ( `fileInfoExists kmy2prt_chk_saveChannelDensity` ) checkBox -edit -v (`getIntFileInfo kmy2prt_chk_saveChannelDensity`) chk_saveChannelDensity;
+	if ( `fileInfoExists kmy2prt_chk_saveChannelID` ) checkBox -edit -v (`getIntFileInfo kmy2prt_chk_saveChannelID`) chk_saveChannelID;
+	if ( `fileInfoExists kmy2prt_chk_saveChannelNormal` ) checkBox -edit -v (`getIntFileInfo kmy2prt_chk_saveChannelNormal`) chk_saveChannelNormal;
+	if ( `fileInfoExists kmy2prt_chk_saveChannelRotation` ) checkBox -edit -v (`getIntFileInfo kmy2prt_chk_saveChannelRotation`) chk_saveChannelRotation;
+	if ( `fileInfoExists kmy2prt_chk_saveChannelEmission` ) checkBox -edit -v (`getIntFileInfo kmy2prt_chk_saveChannelEmission`) chk_saveChannelEmission;
+
+	if ( `fileInfoExists kmy2prt_chk_saveChannelAge` ) checkBox -edit -v (`getIntFileInfo kmy2prt_chk_saveChannelAge`) chk_saveChannelAge;
+	if ( `fileInfoExists kmy2prt_chk_saveChannelLifeSpan` ) checkBox -edit -v (`getIntFileInfo kmy2prt_chk_saveChannelLifeSpan`) chk_saveChannelLifeSpan;
+
+
+	if ( `fileInfoExists kmy2prt_ddl_saveChannelVelocityFormat` ) optionMenu -edit -select (`getIntFileInfo kmy2prt_ddl_saveChannelVelocityFormat`) ddl_saveChannelVelocityFormat;
+	if ( `fileInfoExists kmy2prt_ddl_saveChannelColorFormat` ) optionMenu -edit -select (`getIntFileInfo kmy2prt_ddl_saveChannelColorFormat`) ddl_saveChannelColorFormat;
+	if ( `fileInfoExists kmy2prt_ddl_saveChannelDensityFormat` ) optionMenu -edit -select (`getIntFileInfo kmy2prt_ddl_saveChannelDensityFormat`) ddl_saveChannelDensityFormat;
+	if ( `fileInfoExists kmy2prt_ddl_saveChannelIDFormat` ) optionMenu -edit -select (`getIntFileInfo kmy2prt_ddl_saveChannelIDFormat`) ddl_saveChannelIDFormat;
+	if ( `fileInfoExists kmy2prt_ddl_saveChannelNormalFormat` ) optionMenu -edit -select (`getIntFileInfo kmy2prt_ddl_saveChannelNormalFormat`) ddl_saveChannelNormalFormat;
+	if ( `fileInfoExists kmy2prt_ddl_saveChannelRotationFormat` ) optionMenu -edit -select (`getIntFileInfo kmy2prt_ddl_saveChannelRotationFormat`) ddl_saveChannelRotationFormat;
+	if ( `fileInfoExists kmy2prt_ddl_saveChannelEmissionFormat` ) optionMenu -edit -select (`getIntFileInfo kmy2prt_ddl_saveChannelEmissionFormat`) ddl_saveChannelEmissionFormat;
+
+	if ( `fileInfoExists kmy2prt_ddl_saveChannelAgeFormat` ) optionMenu -edit -select (`getIntFileInfo kmy2prt_ddl_saveChannelAgeFormat`) ddl_saveChannelAgeFormat;
+	if ( `fileInfoExists kmy2prt_ddl_saveChannelLifeSpanFormat` ) optionMenu -edit -select (`getIntFileInfo kmy2prt_ddl_saveChannelLifeSpanFormat`) ddl_saveChannelLifeSpanFormat;
+
+	if ( `fileInfoExists kmy2prt_ddl_exportAnimation` ) optionMenu -edit -select (`getIntFileInfo kmy2prt_ddl_exportAnimation`) ddl_exportAnimation;
+	if ( `fileInfoExists kmy2prt_chk_saveMode` ) checkBox -edit -v (`getIntFileInfo kmy2prt_chk_saveMode`) chk_saveMode;
+
+	if ( `fileInfoExists kmy2prt_chk_incrementRandomSeeds` ) checkBox -edit -v (`getIntFileInfo kmy2prt_chk_incrementRandomSeeds`) chk_incrementRandomSeeds;
+	if ( `fileInfoExists kmy2prt_chk_randomizeParticleChannels` ) checkBox -edit -v (`getIntFileInfo kmy2prt_chk_randomizeParticleChannels`) chk_randomizeParticleChannels;
+
+	if ( `fileInfoExists kmy2prt_chk_randomizeChannelPosition` ) checkBox -edit -v (`getIntFileInfo kmy2prt_chk_randomizeChannelPosition`) chk_randomizeChannelPosition;
+	if ( `fileInfoExists kmy2prt_chk_randomizeChannelVelocity` ) checkBox -edit -v (`getIntFileInfo kmy2prt_chk_randomizeChannelVelocity`) chk_randomizeChannelVelocity;
+
+	if ( `fileInfoExists kmy2prt_chk_deadlineSubmit` ) checkBox -edit -v (`getIntFileInfo kmy2prt_chk_deadlineSubmit`) chk_deadlineSubmit;
+
+	if ( `fileInfoExists kmy2prt_flt_randomizeChannelPositionRadius` ) floatSliderGrp -edit -v (`getFloatFileInfo kmy2prt_flt_randomizeChannelPositionRadius`) flt_randomizeChannelPositionRadius;
+	if ( `fileInfoExists kmy2prt_flt_randomizeChannelVelocityRadius` ) floatSliderGrp -edit -v (`getFloatFileInfo kmy2prt_flt_randomizeChannelVelocityRadius`) flt_randomizeChannelVelocityRadius;
+	
+	if ( `fileInfoExists kmy2prt_int_partitionsCount` ) intSliderGrp -edit -v (`getIntFileInfo kmy2prt_int_partitionsCount`) int_partitionsCount;
+
+	if ( `fileInfoExists kmy2prt_chk_partitionSubRange` ) checkBox -edit -v (`getIntFileInfo kmy2prt_chk_partitionSubRange`) chk_partitionSubRange;
+	if ( `fileInfoExists kmy2prt_int_fromPartition` ) intSliderGrp -edit -v (`getIntFileInfo kmy2prt_int_fromPartition`) int_fromPartition;
+	if ( `fileInfoExists kmy2prt_int_toPartition` ) intSliderGrp -edit -v (`getIntFileInfo kmy2prt_int_toPartition`) int_toPartition;
+
+	if ( `fileInfoExists kmy2prt_ddl_saveFileFormat` ) optionMenu -edit -select (`getIntFileInfo kmy2prt_ddl_saveFileFormat`) ddl_saveFileFormat;
+	
+	int $totalCount = `intSliderGrp -q -v int_partitionsCount`;
+	
+	if ( `fileInfoExists kmy2prt_ddl_verbosityLevel` ) optionMenu -edit -select (`getIntFileInfo kmy2prt_ddl_verbosityLevel`) ddl_verbosityLevel;
+
+	//FRAME COLLAPSE/EXPAND
+	if ( `fileInfoExists kmy2prt_PRTOutputLayout` ) frameLayout -edit -cl (`getIntFileInfo kmy2prt_PRTOutputLayout`) PRTOutputLayout;
+	if ( `fileInfoExists kmy2prt_PRTChannelSettingsLayout` ) frameLayout -edit -cl (`getIntFileInfo kmy2prt_PRTChannelSettingsLayout`) PRTChannelSettingsLayout;
+	if ( `fileInfoExists kmy2prt_PRTPartitionSettingsLayout` ) frameLayout -edit -cl (`getIntFileInfo kmy2prt_PRTPartitionSettingsLayout`) PRTPartitionSettingsLayout;
+	if ( `fileInfoExists kmy2prt_PRTPreferencesLayout` ) frameLayout -edit -cl (`getIntFileInfo kmy2prt_PRTPreferencesLayout`) PRTPreferencesLayout;
+	
+	//OUTPUT
+	if ( `fileInfoExists kmy2prt_txt_outputBasePath` ) textField -edit -text (`getStringFileInfo kmy2prt_txt_outputBasePath`) txt_outputBasePath;
+	if ( `fileInfoExists kmy2prt_txt_outputFolder` ) textField -edit -text (`getStringFileInfo kmy2prt_txt_outputFolder`) txt_outputFolder;
+	if ( `fileInfoExists kmy2prt_txt_outputVersionFolder` ) textField -edit -text (`getStringFileInfo kmy2prt_txt_outputVersionFolder`) txt_outputVersionFolder;
+	if ( `fileInfoExists kmy2prt_txt_filePrefix` ) textField -edit -text (`getStringFileInfo kmy2prt_txt_filePrefix`) txt_filePrefix;
+	
+	KMY2PRT_updatePathPreview ();
+}
+
+global proc KMY2PRT_saveDeadlineSettings ()
+{
+	saveStringFileInfo kmy2prt_txt_deadlineJobName (`textFieldGrp -q -text txt_deadlineJobName`);
+	saveStringFileInfo kmy2prt_txt_deadlineComment (`textFieldGrp -q -text txt_deadlineComment`);
+	saveStringFileInfo kmy2prt_txt_deadlineDepartment (`textFieldGrp -q -text txt_deadlineDepartment`);
+
+	saveIntFileInfo kmy2prt_int_deadlinePriority (`intSliderGrp -q -v int_deadlinePriority`);
+	
+	saveStringFileInfo kmy2prt_ddl_deadlineGroup (`optionMenu -q -v ddl_deadlineGroup`);
+	saveStringFileInfo kmy2prt_ddl_deadlinePool (`optionMenu -q -v ddl_deadlinePool`);
+}
+
+// Helper method to select a menu item by the label name rather than item index
+proc selectOptionMenuItem ( string $menuName, string $selection )
+{
+	if ( `optionMenu -q -ni $menuName` > 0 )
+	{
+		string $options[] = `optionMenu -q -ils $menuName`;
+		string $current = $selection;
+		int $i = 0;
+		for( ; $i < `size $options`; $i = $i + 1 )
+		{
+			if( $current == `menuItem -q -label $options[ $i ]` )
+			{
+				break;
+			}
+		}
+		if( $i >= `size $options` )
+			$i = 0;
+		optionMenu -edit -select ($i + 1) $menuName;
+	}
+}
+
+global proc KMY2PRT_loadDeadlineSettings ()
+{
+	if ( `fileInfoExists kmy2prt_txt_deadlineJobName` ) textFieldGrp -edit -text (`getStringFileInfo kmy2prt_txt_deadlineJobName`) txt_deadlineJobName;
+	if ( `fileInfoExists kmy2prt_txt_deadlineComment` ) textFieldGrp -edit -text (`getStringFileInfo kmy2prt_txt_deadlineComment`) txt_deadlineComment;
+	if ( `fileInfoExists kmy2prt_txt_deadlineDepartment` ) textFieldGrp -edit -text (`getStringFileInfo kmy2prt_txt_deadlineDepartment`) txt_deadlineDepartment;
+
+	if ( `fileInfoExists kmy2prt_int_deadlinePriority` ) intSliderGrp -edit -v (`getIntFileInfo kmy2prt_int_deadlinePriority`) int_deadlinePriority;
+	
+	// Go through and select the appropriate group/pool from the combo box
+	if ( `fileInfoExists kmy2prt_ddl_deadlineGroup` )
+	{
+		selectOptionMenuItem ddl_deadlineGroup `getStringFileInfo kmy2prt_ddl_deadlineGroup`;
+	}
+	if ( `fileInfoExists kmy2prt_ddl_deadlinePool` )
+	{
+		selectOptionMenuItem ddl_deadlinePool `getStringFileInfo kmy2prt_ddl_deadlinePool`;
+	}
+}
+
+//THIS FUNCTION SAVES THE SETTINGS AND UPDATES THE CONTROLS DISPLAY
+global proc KMY2PRT_setControlsVisibility ()
+{
+	//KMY2PRT_saveSettings();
+	// string $ddl_exportAnimation = `optionMenuGrp -q -v ddl_exportAnimation`;
+
+	int $numObjects = `textScrollList -q -numberOfItems lbx_objectsToSave`;
+	button -e -enable ($numObjects > 0) btn_export;
+	if( `window -q -exists KMY2PRTDeadlineWindow` )
+		button -e -enable ($numObjects > 0) btn_submit_deadline;
+	
+	int $enablePartitioning = `checkBox -q -v chk_saveMode`;
+	int $enableSubRange = `checkBox -q -v chk_partitionSubRange`;
+	
+	frameLayout -e  -collapse (!($enableSubRange)) PRTPartitionSubrangeLayout; //-labelVisible $enableSubRange
+	
+	intSliderGrp -e -enable ($enablePartitioning) int_partitionsCount;
+	
+	intSliderGrp -e -enable ($enablePartitioning&&$enableSubRange) int_fromPartition;
+	intSliderGrp -e -enable ($enablePartitioning&&$enableSubRange) int_toPartition;
+	
+	text -e -enable ($enablePartitioning) lbl_randomizeOptions;
+	checkBox -e -enable ($enablePartitioning) chk_incrementRandomSeeds;
+	checkBox -e -enable ($enablePartitioning) chk_randomizeParticleChannels;
+	
+	int $randomizeChannels = `checkBox -q -v chk_randomizeParticleChannels`;
+	if( !$enablePartitioning )
+		$randomizeChannels = 0;
+	
+	checkBox -e -enable ($randomizeChannels) chk_randomizeChannelPosition;
+	checkBox -e -enable ($randomizeChannels) chk_randomizeChannelVelocity;
+	
+	floatSliderGrp -e -enable ($randomizeChannels) flt_randomizeChannelPositionRadius;
+	floatSliderGrp -e -enable ($randomizeChannels) flt_randomizeChannelVelocityRadius;
+}
+
+
+proc KMY2PRT_updateLists ()
+{
+	textScrollList -edit -ra lbx_doNotSave;
+	string $anObject;
+
+	string $allObjects[] = `ls -v -typ "particle" -typ "nParticle" `;	 // -typ "PRTFractal" -typ "PRTLoader" -typ "PRTVolume"
+	for ($anObject in $allObjects)
+	{
+		// If a stream has a deformed version, ignore it
+		if ( `KMY_mayaParticleGetDeformed $anObject` == "" )
+			textScrollList -edit -append $anObject lbx_objectsToSave;
+	}
+	//string $allObjects[] = `ls -v -typ "PRTMayaParticle"`;
+	//for ($anObject in $allObjects)
+	//{
+	//	textScrollList -edit -append $anObject lbx_doNotSave;
+	//}
+	$allObjects = `ls -v -typ "PRTVolume"`;	 // -typ "PRTFractal" -typ "PRTLoader" -typ "PRTVolume"
+	for ($anObject in $allObjects)
+	{
+		textScrollList -edit -append $anObject lbx_doNotSave;
+	}
+	$allObjects = `ls -v -typ "PRTSurface"`;
+	for ($anObject in $allObjects)
+	{
+		textScrollList -edit -append $anObject lbx_doNotSave;
+	}
+	$allObjects = `ls -v -typ "PRTFractal"`;
+	for ($anObject in $allObjects)
+	{
+		textScrollList -edit -append $anObject lbx_doNotSave;
+	}
+	$allObjects = `ls -v -typ "PRTLoader"`;
+	for ($anObject in $allObjects)
+	{
+		textScrollList -edit -append $anObject lbx_doNotSave;
+	}
+}
+
+global proc KMY2PRT_moveLeftToRight ()
+{
+	string $selectedItem[] = `textScrollList -q -si lbx_doNotSave`;
+	textScrollList -edit -append $selectedItem[0] lbx_objectsToSave;
+	textScrollList -edit -ri $selectedItem[0] lbx_doNotSave;
+	
+	KMY2PRT_setControlsVisibility();
+}
+
+global proc KMY2PRT_moveRightToLeft ()
+{
+	string $selectedItem[] = `textScrollList -q -si lbx_objectsToSave`;
+	textScrollList -edit -append $selectedItem[0] lbx_doNotSave;
+	textScrollList -edit -ri $selectedItem[0] lbx_objectsToSave;
+	
+	KMY2PRT_setControlsVisibility();
+}
+
+global proc KMY2PRT_selectByLeftList ()
+{
+    int $mods = `getModifiers`;
+    if ($mods == 4)
+    {
+	string $selectedItem[] = `textScrollList -q -si lbx_doNotSave`;
+	select -r $selectedItem[0];
+    };
+}
+
+global proc KMY2PRT_selectByRightList ()
+{
+    int $mods = `getModifiers`;
+    if ($mods == 4)
+    {
+	string $selectedItem[] = `textScrollList -q -si lbx_objectsToSave`;
+	select -r $selectedItem[0];
+    };
+}
+
+global proc KMY2PRT_updateRangeSliders ()
+{
+	int $totalCount = `intSliderGrp -q -v int_partitionsCount`;
+	int $fromValue = `intSliderGrp -q -v int_fromPartition`;
+	int $toValue = `intSliderGrp -q -v int_toPartition`;
+	if ($fromValue > $totalCount) $fromValue = $totalCount;
+	if ($toValue > $totalCount) $toValue = $totalCount;
+	if ($fromValue > $toValue) $fromValue = $toValue;
+	
+	intSliderGrp -e -v $fromValue -maxValue $totalCount -fieldMaxValue $totalCount int_fromPartition;						
+	intSliderGrp -e -v $toValue -maxValue $totalCount -fieldMaxValue $totalCount	int_toPartition;	
+	
+}
+
+//RETURNS THE FRAME NUMBER PADDED WITH LEADING ZEROS TO A GIVEN NUMBER OF DIGITS
+global proc string padWithLeadingZeros ( float $frameNumber, int $numberDigits)
+{
+	string $returnString;
+	if( $frameNumber != int( $frameNumber ) )
+		$returnString = python("w,t = '"+$frameNumber+"'.split('.'); w.zfill("+$numberDigits+")+'.'+t");
+	else 
+		$returnString = python("'"+$frameNumber+"'.zfill("+$numberDigits+")");
+	return $returnString;
+}
+
+global proc KMY2PRT_setRootToCurrentProject ()
+{
+	textField -e -text (`KMY2PRT_getOutputFolder`) txt_outputBasePath;
+	KMY2PRT_saveSettings(); 
+	KMY2PRT_updatePathPreview();
+}
+
+global proc KMY2PRT_getRootOutputFolder ()
+{
+	string $startingDirectory = `textField -q -text txt_outputBasePath`;
+	string $filePath[] = `fileDialog2 -dialogStyle 2  -fileMode 3 -okCaption "OK" -startingDirectory $startingDirectory`;
+	if (`filetest -r $filePath[0]`)
+	{
+		textField -e -text ($filePath[0]+"/") txt_outputBasePath;
+		KMY2PRT_saveSettings(); 
+		KMY2PRT_updatePathPreview();	
+	}
+}
+
+global proc KMY2PRT_RootPathSanityCheck()
+{
+	string $oldPath = `KMY2PRT_getOutputFolder`; //init to default output
+	if ( `fileInfoExists kmy2prt_txt_outputBasePath` ) $oldPath =`getStringFileInfo kmy2prt_txt_outputBasePath`; //load setting from file if it exists
+	
+	string $basePath = `textField -q -text txt_outputBasePath`;
+	int $size = `size $basePath`;
+	if (`substring $basePath $size $size` != "/") 
+	{
+		$basePath += "/";
+		textField -e -text $basePath txt_outputBasePath;
+	}
+	if (`filetest -r $basePath`)
+	{
+		KMY2PRT_saveSettings(); 
+		KMY2PRT_updatePathPreview();
+	}
+	else // if the path is invalid, reset to last known path
+	{
+		textField -e -text $oldPath txt_outputBasePath;
+		KMY2PRT_updatePathPreview();
+	}
+}
+
+global proc KMY2PRT_updatePathPreview ()
+{
+	string $basePath = `textField -q -text txt_outputBasePath`;
+	string $sequenceFolder = `textField -q -text txt_outputFolder`;
+	string $sequenceVersionFolder = `textField -q -text txt_outputVersionFolder`;
+	
+	string $fileName = `textField -q -text txt_filePrefix`;
+	string $fileType = `optionMenu -q -v ddl_saveFileFormat`;
+	textField -e -text ($basePath + $sequenceFolder + "/"+$sequenceVersionFolder+"/"+ $fileName + "####."+ $fileType  ) txt_basePath;
+	
+	float $red = 0.1;
+	float $green = 0.15;
+	float $blue = 0.25;
+	if ($fileType == "bin") 
+	{
+		$red = 0.1;
+		$green = 0.25;
+		$blue = 0.15;		
+	}
+	else if ($fileType == "csv") 
+	{
+		$red = 0.25;
+		$green = 0.15;
+		$blue = 0.1;		
+	}
+	optionMenu -e -bgc $red $green $blue ddl_saveFileFormat;
+	KMY2PRT_updateFramesToSaveColor();
+}
+
+global proc KMY2PRT_updateFramesToSaveColor ()
+{
+	string $mode = `optionMenu -q -sl ddl_exportAnimation`;
+	float $red = 0.1;
+	float $green = 0.15;
+	float $blue = 0.25;
+	if ($mode == 2) 
+	{
+		$red = 0.1;
+		$green = 0.25;
+		$blue = 0.15;		
+	}
+	else if ($mode == 3) 
+	{
+		$red = 0.25;
+		$green = 0.15;
+		$blue = 0.1;		
+	}
+	optionMenu -e -bgc $red $green $blue ddl_exportAnimation;	
+	
+}
+	
+
+//THIS IS THE MAIN GUI
+global proc CreateKMY2PRTDialog ()
+{
+	if((`window -exists KMY2PRTWindow`) == true) deleteUI KMY2PRTWindow; //ensure the dialog is closed before opening another
+
+	//Actual width is 460, just 490 for the scrollbar to fit
+	global string $KMY2PRTWindow;
+	$KMY2PRTWindow = `window -w 490 -h 670 -t "Krakatoa PRT Saving And Partitioning" -sizeable false KMY2PRTWindow`;
+	
+	columnLayout -adjustableColumn true;
+
+		//Actual width is 460, just 490 for the scrollbar to fit
+		scrollLayout -w 490 -h 600;
+
+			columnLayout -adjustableColumn true;
+
+				gridLayout -numberOfColumns 2 -cellWidthHeight 230 18;
+					text -label "Do NOT Save (Double-click to enable)" lbl_doNotSave;
+					text -label "Objects To SAVE (Double-click to disable)" lbl_objectsToSave;
+				setParent ..;	
+
+				gridLayout -numberOfColumns 2 -cellWidthHeight 230 190;
+					textScrollList -numberOfRows 13 -allowMultiSelection false
+						lbx_doNotSave;	
+
+					textScrollList -numberOfRows 13 -allowMultiSelection false
+						lbx_objectsToSave;	
+				setParent ..;	
+
+				frameLayout -label "File Output" -collapsable true -collapse false PRTOutputLayout;
+					rowLayout -numberOfColumns 2 -height 20 -columnWidth2 230 230 -cl2 "right" "right" ;
+					//gridLayout -numberOfColumns 2 -cellWidthHeight 230 20;
+						text -w 220 -label "Frames To Save:";
+						optionMenu -w 223 ddl_exportAnimation;			 //-ad2 2 
+							menuItem -label "Scene Range";
+							menuItem -label "Render Range";	
+							menuItem -label "Current Frame";
+					setParent ..;		
+
+					rowLayout -numberOfColumns 2 -height 18 -columnWidth2 410 45 -cl2 "right" "right" ;
+						textField -w 410 -text (`KMY2PRT_getOutputFolder`)  -cc ("KMY2PRT_RootPathSanityCheck();") txt_outputBasePath; 
+						button -label "Root..." -h 18 -w 45 btn_root;
+							popupMenu -button 1;
+							    menuItem -label "Set to CURRENT PROJECT" -command "KMY2PRT_setRootToCurrentProject();"; 
+							    menuItem -label "Pick a CUSTOM PATH..." -command "KMY2PRT_getRootOutputFolder();"; 
+					setParent ..;
+					
+					gridLayout -numberOfColumns 4 -cellWidthHeight 114 22;
+						text -label "Sequence Folder:";
+						text -label "Version Folder:";
+						text -label "Filename Prefix:";
+						text -label "File Format:";
+						
+						textField  -w 120 -text "Sequence" -cc ("KMY2PRT_saveSettings(); KMY2PRT_updatePathPreview();") txt_outputFolder; 
+						textField  -w 120 -text "v001" -cc ("KMY2PRT_saveSettings(); KMY2PRT_updatePathPreview();") txt_outputVersionFolder;
+						textField  -w 120 -text "Particles"  -cc ("KMY2PRT_saveSettings();KMY2PRT_updatePathPreview();") txt_filePrefix;
+						optionMenu -w 60 -cc ("KMY2PRT_saveSettings();KMY2PRT_updatePathPreview();") ddl_saveFileFormat;
+							menuItem -label "prt";
+							menuItem -label "bin";
+							menuItem -label "csv";
+					setParent ..;
+					gridLayout -numberOfColumns 1 -cellWidthHeight 460 25;
+						//text -label "Final Output Path:";
+						textField -w 460 -editable false -bgc 0.15 0.2 0.2 txt_basePath;
+					setParent ..;
+					
+					/*
+					//gridLayout -numberOfColumns 3 -cellWidthHeight 440 19;
+					rowLayout -numberOfColumns 2 -height 18 -columnWidth2 120 310 -cl2 "right" "right"  ;
+						textFieldGrp  -label "Sequence Root Path:" -ad2 2 -w 440 -text (`KMY2PRT_getOutputFolder`)  -cc ("KMY2PRT_saveSettings(); KMY2PRT_updatePathPreview();") txt_outputBasePath; 
+						button -label "..." -h 18 -w 22;
+					setParent ..;
+					gridLayout -numberOfColumns 1 -cellWidthHeight 300 22;
+						textFieldGrp -label "Sequence Name Folder:" -ad2 2 -w 460 -text "Project" -cc ("KMY2PRT_saveSettings(); KMY2PRT_updatePathPreview();") txt_outputFolder;
+						textFieldGrp -label "Sequence Version Folder:" -ad2 2 -w 460 -text "v001" -cc ("KMY2PRT_saveSettings(); KMY2PRT_updatePathPreview();") txt_outputVersionFolder;
+						textFieldGrp -label "Sequence Filename Prefix:" -ad2 2 -w 460 -text "Particles"  -cc ("KMY2PRT_saveSettings();KMY2PRT_updatePathPreview();") txt_filePrefix;
+						optionMenuGrp -label "File Format" -ad2 2 ddl_saveFileFormat;
+							menuItem -label "prt";
+							menuItem -label "bin";
+							menuItem -label "csv";
+					setParent ..;
+					gridLayout -numberOfColumns 1 -cellWidthHeight 460 20;
+						//text -label "Final Output Path:";
+						textField -w 460 -editable false txt_basePath;
+					setParent ..;
+					*/
+				setParent ..;
+
+				frameLayout -label "Partitioning" -collapsable true -collapse false PRTPartitionSettingsLayout;
+
+					gridLayout -numberOfColumns 2 -cellWidthHeight 175 20;
+						checkBox -label "Save Multiple Partitions" -value false chk_saveMode;
+						checkBox -label "Save A Sub-Range Of Partitions" -value false chk_partitionSubRange;	
+					setParent ..;
+					
+					intSliderGrp -label "Total Partitions Count:" -field true
+						-minValue 2 -maxValue 100
+						-fieldMinValue 1 -fieldMaxValue 1000
+						-value 10
+						-cc ("KMY2PRT_saveSettings();KMY2PRT_updateRangeSliders()")
+						-columnAlign3 "right" "left" "left"
+						-columnWidth3 125 60 176
+						-height 14
+						-rowAttach 1 "top" -2
+						-rowAttach 2 "top" -5
+						-rowAttach 3 "top" -2
+						int_partitionsCount;
+					
+					frameLayout -label "Specify A Sub-Range To Partition" -labelVisible false -borderVisible false -collapsable true -collapse true PRTPartitionSubrangeLayout;
+						
+						intSliderGrp -label "From Partition:" -field true
+							-minValue 1 -maxValue 10
+							-fieldMinValue 1 -fieldMaxValue 1000
+							-value 1
+							-cc ("KMY2PRT_saveSettings();KMY2PRT_updateRangeSliders()")
+							-columnAlign3 "right" "left" "left"
+							-columnWidth3 125 60 176
+							-height 14
+							-rowAttach 1 "top" -2
+							-rowAttach 2 "top" -5
+							-rowAttach 3 "top" -2
+							int_fromPartition;						
+							
+						intSliderGrp -label "To Partition:" -field true
+							-minValue 1 -maxValue 10
+							-fieldMinValue 1 -fieldMaxValue 1000
+							-value 10
+							-cc ("KMY2PRT_saveSettings();KMY2PRT_updateRangeSliders()")
+							-columnAlign3 "right" "left" "left"
+							-columnWidth3 125 60 176
+							-height 14
+							-rowAttach 1 "top" -2
+							-rowAttach 2 "top" -5
+							-rowAttach 3 "top" -2
+							int_toPartition;							
+					setParent ..;	
+
+					rowLayout -numberOfColumns 2 -height 14 -columnWidth2 17 443;
+						text -label " " -align "left" -height 14;
+						text -label "Partition Randomization:" -align "left" -height 14 lbl_randomizeOptions;
+					setParent ..;
+
+					rowLayout -numberOfColumns 2 -height 14 -columnWidth2 40 420;
+						text -label " " -align "left" -height 14;
+						checkBox -label "Increment Emission Random Seeds" -value true -height 14 chk_incrementRandomSeeds;
+					setParent ..;
+
+					rowLayout -numberOfColumns 2 -height 14 -columnWidth2 40 420;
+						text -label " " -align "left" -height 14;
+						checkBox -label "Enable Channels Randomization:" -value false -height 14 chk_randomizeParticleChannels;
+					setParent ..;
+
+					rowLayout -numberOfColumns 3 -height 14 -columnWidth3 70 130 240;
+						text -label " " -align "left" -height 14;
+						checkBox -label "Randomize Position" -value true -height 14 chk_randomizeChannelPosition;
+						floatSliderGrp -label "Jitter Radius:" -field true 
+							-minValue 0.0 -maxValue 10.0
+							-value 0.01
+							-step 0.01
+							-cc ("KMY2PRT_saveSettings()")
+							-columnAlign3 "left" "left" "left"
+							-columnWidth3 65 80 95
+							-rowAttach 1 "top" -1
+							-rowAttach 2 "top" -5
+							-rowAttach 3 "top" -1
+							-height 14
+							flt_randomizeChannelPositionRadius;
+					setParent ..;
+
+					rowLayout -numberOfColumns 3 -height 14 -columnWidth3 70 130 240;
+						text -label " " -align "left" -height 14;
+						checkBox -label "Randomize Velocity" -value false -height 14 chk_randomizeChannelVelocity;
+						floatSliderGrp -label "Jitter Radius:" -field true
+							-minValue 0.0 -maxValue 10.0
+							-value 0.01
+							-step 0.01
+							-cc ("KMY2PRT_saveSettings()")
+							-columnAlign3 "left" "left" "left"
+							-columnWidth3 65 80 95
+							-rowAttach 1 "top" -1
+							-rowAttach 2 "top" -5
+							-rowAttach 3 "top" -1
+							-height 14
+							flt_randomizeChannelVelocityRadius;	
+					setParent ..;
+
+					text -label " " -align "left" -height 5;
+
+				setParent ..;	
+
+				frameLayout -label "Channels To Save" -collapsable true -collapse true PRTChannelSettingsLayout;
+					gridLayout -numberOfColumns 2 -cellWidthHeight 230 20;
+						checkBox -label "Position (position)" -value true -enable false chk_saveChannelPosition;
+						optionMenu -label "" -width 230 -enable false ddl_saveChannelPositionFormat;
+							menuItem -label "float32[3]";
+
+						checkBox -label "Velocity (velocity)" -value true chk_saveChannelVelocity;
+						optionMenu -label "" -width 230 ddl_saveChannelVelocityFormat;
+							menuItem -label "float16[3]";
+							menuItem -label "float32[3]";
+
+						checkBox -label "Color (rgb)" -value true chk_saveChannelColor;
+						optionMenu -label "" -width 230 ddl_saveChannelColorFormat;
+							menuItem -label "float16[3]";
+							menuItem -label "float32[3]";
+
+						checkBox -label "Density (opacity)" -value true chk_saveChannelDensity;
+						optionMenu -label "" -width 230 ddl_saveChannelDensityFormat;
+							menuItem -label "float16";
+							menuItem -label "float32";
+
+						checkBox -label "ID (particleId)" -value true chk_saveChannelID;
+						optionMenu -label "" -width 230 ddl_saveChannelIDFormat;
+							menuItem -label "int64";
+							menuItem -label "int32";
+
+						checkBox -label "Normal" -value false chk_saveChannelNormal;
+						optionMenu -label "" -width 230 ddl_saveChannelNormalFormat;
+							menuItem -label "float16[3]";
+							menuItem -label "float32[3]";
+							
+						checkBox -label "Rotation (rotation)" -value false chk_saveChannelRotation;
+						optionMenu -label "" -width 230 ddl_saveChannelRotationFormat;
+							menuItem -label "float16[3]";
+							menuItem -label "float32[3]";
+
+						checkBox -label "Emission (incandescence)" -value false chk_saveChannelEmission;
+						optionMenu -label "" -width 230 ddl_saveChannelEmissionFormat;
+							menuItem -label "float16[3]";
+							menuItem -label "float32[3]";
+							
+						checkBox -label "Age (age)" -value false chk_saveChannelAge;
+						optionMenu -label "" -width 230 ddl_saveChannelAgeFormat;
+							menuItem -label "float16";
+							menuItem -label "float32";	
+
+						checkBox -label "LifeSpan (lifeSpan)" -value false chk_saveChannelLifeSpan;
+						optionMenu -label "" -width 230 ddl_saveChannelLifeSpanFormat;
+							menuItem -label "float16";
+							menuItem -label "float32";	
+
+					setParent ..;
+				setParent ..;
+
+				frameLayout -label "Preferences" -collapsable true -collapse true PRTPreferencesLayout;
+					gridLayout -numberOfColumns 2 -cellWidthHeight 230 20;
+						optionMenu -label " Log Level:  " -width 190 ddl_verbosityLevel;
+							menuItem -label "none";
+							menuItem -label "progress";
+							menuItem -label "debug";
+
+					setParent ..;
+				setParent ..;
+				
+			setParent ..;
+		setParent ..; //pop "scrollLayout"
+	
+		//text -label " " -align "left" -height 14;
+		button -label "SAVE PARTICLE OBJECTS TO PRT FILES" -h 40 -w 100 btn_export;
+	
+		rowLayout -numberOfColumns 2 -columnWidth2 320 80;
+			text -label " " -align "left";
+			checkBox -label "Submit as DEADLINE Job" -value false chk_deadlineSubmit;
+		setParent ..;
+		
+	setParent ..;
+
+	
+
+//EVENT HANDLERS
+	button -edit -command ("exportButtonPressed();") btn_export;
+	//button -edit -command ("exportFromInterface(false)") btn_export;
+	//button -edit -command ("if( `CreateKMY2PRTDeadlineDialog` ) KMY2PRT_loadDeadlineSettings();") btn_export_deadline;
+	
+	checkBox -edit -cc ("KMY2PRT_saveSettings()") chk_saveChannelVelocity;
+	optionMenu -edit -cc ("KMY2PRT_saveSettings()") ddl_saveChannelVelocityFormat;
+	checkBox -edit -cc ("KMY2PRT_saveSettings()") chk_saveChannelColor;
+	optionMenu -edit -cc ("KMY2PRT_saveSettings()") ddl_saveChannelColorFormat;
+	checkBox -edit -cc ("KMY2PRT_saveSettings()") chk_saveChannelDensity;
+	optionMenu -edit -cc ("KMY2PRT_saveSettings()") ddl_saveChannelDensityFormat;
+	checkBox -edit -cc ("KMY2PRT_saveSettings()") chk_saveChannelID;
+	optionMenu -edit -cc ("KMY2PRT_saveSettings()") ddl_saveChannelIDFormat;
+	checkBox -edit -cc ("KMY2PRT_saveSettings()") chk_saveChannelNormal;
+	optionMenu -edit -cc ("KMY2PRT_saveSettings()") ddl_saveChannelNormalFormat;
+	checkBox -edit -cc ("KMY2PRT_saveSettings()") chk_saveChannelRotation;
+	optionMenu -edit -cc ("KMY2PRT_saveSettings()") ddl_saveChannelRotationFormat;	
+	checkBox -edit -cc ("KMY2PRT_saveSettings()") chk_saveChannelEmission;
+	optionMenu -edit -cc ("KMY2PRT_saveSettings()") ddl_saveChannelEmissionFormat;
+	
+	checkBox -edit -cc ("KMY2PRT_saveSettings()") chk_saveChannelAge;
+	optionMenu -edit -cc ("KMY2PRT_saveSettings()") ddl_saveChannelAgeFormat;
+	checkBox -edit -cc ("KMY2PRT_saveSettings()") chk_saveChannelLifeSpan;
+	optionMenu -edit -cc ("KMY2PRT_saveSettings()") ddl_saveChannelLifeSpanFormat;
+	
+	
+	optionMenu -edit -cc ("KMY2PRT_saveSettings();KMY2PRT_updateFramesToSaveColor();") ddl_exportAnimation;
+
+	checkBox -edit -cc ("KMY2PRT_saveSettings();KMY2PRT_setControlsVisibility()") chk_saveMode;
+	checkBox -edit -cc ("KMY2PRT_saveSettings();KMY2PRT_setControlsVisibility()") chk_partitionSubRange;
+
+	checkBox -edit -cc ("KMY2PRT_saveSettings()") chk_incrementRandomSeeds;
+	checkBox -edit -cc ("KMY2PRT_saveSettings();KMY2PRT_setControlsVisibility()") chk_randomizeParticleChannels;
+	checkBox -edit -cc ("KMY2PRT_saveSettings()") chk_randomizeChannelPosition;
+	checkBox -edit -cc ("KMY2PRT_saveSettings()") chk_randomizeChannelVelocity;
+	
+	checkBox -edit -cc ("KMY2PRT_saveSettings()") chk_deadlineSubmit;
+	
+	
+//SAVE SETTINGS, SET CONTROLS VISIBILITY
+	textScrollList -edit -dcc ("KMY2PRT_moveLeftToRight()") lbx_doNotSave;
+	textScrollList -edit -dcc ("KMY2PRT_moveRightToLeft()") lbx_objectsToSave;
+
+	textScrollList -edit -sc ("KMY2PRT_selectByLeftList()") lbx_doNotSave;
+	textScrollList -edit -sc ("KMY2PRT_selectByRightList()") lbx_objectsToSave;
+	
+	
+//PREFERENCES
+	optionMenu -edit -cc ("KMY2PRT_saveSettings()") ddl_verbosityLevel;
+	
+//FRAME LAYOUT COLLAPSE/EXPAND HANDLERS
+
+	frameLayout -edit -cc ("KMY2PRT_saveSettings()") PRTOutputLayout;
+	frameLayout -edit -ec ("KMY2PRT_saveSettings()") PRTOutputLayout;
+
+	frameLayout -edit -cc ("KMY2PRT_saveSettings()") PRTChannelSettingsLayout;
+	frameLayout -edit -ec ("KMY2PRT_saveSettings()") PRTChannelSettingsLayout;
+
+	frameLayout -edit -cc ("KMY2PRT_saveSettings()") PRTPartitionSettingsLayout;
+	frameLayout -edit -ec ("KMY2PRT_saveSettings()") PRTPartitionSettingsLayout;
+
+	frameLayout -edit -cc ("KMY2PRT_saveSettings()") PRTPreferencesLayout;
+	frameLayout -edit -ec ("KMY2PRT_saveSettings()") PRTPreferencesLayout;
+
+
+//SHOW DIALOG
+	showWindow KMY2PRTWindow;
+}
+
+global proc exportButtonPressed() {
+	if( `checkBox -q -v chk_deadlineSubmit` ) {
+		if( `CreateKMY2PRTDeadlineDialog` )
+			KMY2PRT_loadDeadlineSettings();
+	} else {
+		exportFromInterface( false );
+	}
+}
+
+global proc int CreateKMY2PRTDeadlineDialog ()
+{
+	if( !`isDeadlineInstalled` )
+	{
+		//Deadline is not installed
+		$response = `confirmDialog -title "Krakatoa PRT Export to Deadline" 
+							-message
+							(
+								"DEADLINE WAS NOT DETECTED ON YOUR SYSTEM!\n" + 
+								"\n" +
+								"NOTE: Deadline provides FREE MODE supporting up to 2 NODES without limitations.\n" + 
+								"You could install Deadline in FREE MODE to take advantage of Krakatoa's Partitioning.\n" +
+								"You can download Deadline from the link below:\n" +
+								"http://www.thinkboxsoftware.com/deadline-downloads/"
+							)
+							-button "OK"
+							-defaultButton "OK"
+							-cancelButton "OK"
+							-dismissString "OK"`;
+
+		return 0;
+	}
+
+	if((`window -exists KMY2PRTDeadlineWindow`) == true)
+		deleteUI KMY2PRTDeadlineWindow; //ensure the dialog is closed before opening another
+	
+	global string $KMY2PRTDeadlineWindow;
+	$KMY2PRTWindow = `window -w 460 -h 180 -t "Krakatoa PRT Export to Deadline" KMY2PRTDeadlineWindow`;
+	columnLayout -adjustableColumn true;
+
+	string $deadlinePools[] = `getDeadlinePools`;
+	string $deadlineGroups[] = `getDeadlineGroups`;
+
+	textFieldGrp -label "Job Name:" -ad2 2 -w 460 -cc ("KMY2PRT_saveDeadlineSettings()") -text "Krakatoa PRT Partitioning" txt_deadlineJobName ;
+	textFieldGrp -label "Comment:" -ad2 2 -w 460 -cc ("KMY2PRT_saveDeadlineSettings()") txt_deadlineComment;
+	textFieldGrp -label "Department:" -ad2 2 -w 460 -cc ("KMY2PRT_saveDeadlineSettings()") txt_deadlineDepartment;
+		
+	rowLayout -numberOfColumns 2 -columnAlign2 "left" "right";
+		text -label "                                    ";
+		optionMenu -label "Pool: " -width 346 -cc ("KMY2PRT_saveDeadlineSettings()") ddl_deadlinePool;
+		for( $entry in $deadlinePools )
+		{
+			menuItem -label $entry;
+		}
+	setParent ..;
+	rowLayout -numberOfColumns 2 -columnAlign2 "left" "right";
+		text -label "                                  ";
+		optionMenu -label "Group:" -width 352 -cc ("KMY2PRT_saveDeadlineSettings()") ddl_deadlineGroup;
+		for( $entry in $deadlineGroups )
+		{
+			menuItem -label $entry;
+		}
+	setParent ..;
+
+	gridLayout -numberOfColumns 1 -cellWidthHeight 460 20;
+		intSliderGrp -label "Priority:" -field true
+			-minValue 0 -maxValue 100
+			-fieldMinValue 1 -fieldMaxValue 100
+			-value 50
+			-cc ("KMY2PRT_saveDeadlineSettings()")
+			int_deadlinePriority;
+	setParent ..;
+	
+	button -label "Submit" -h 40 -w 120 btn_submit_deadline;
+
+	// For the submit button, we want to make sure the original window exists since it contains all the data we need
+	button -edit -command ("if( !`window -q -exists KMY2PRTWindow` ) displayPRTExporterDialog(); exportFromInterface(true); ") btn_submit_deadline;
+
+	//SHOW DIALOG
+	showWindow KMY2PRTDeadlineWindow;
+	window -edit -h 180 KMY2PRTDeadlineWindow;
+	window -edit -w 460 KMY2PRTDeadlineWindow;
+
+	return 1;
+}
+
+global proc displayPRTExporterDialog()
+{
+	KMY_wrapMayaParticles();
+	CreateKMY2PRTDialog();
+	KMY2PRT_loadSettings();
+	//KMY2PRT_setControlsVisibility();
+	KMY2PRT_updateLists();
+	KMY2PRT_setControlsVisibility();
+	
+	window -edit -h 670 KMY2PRTWindow;
+	window -edit -w 490 KMY2PRTWindow;
+}
+
+global proc exportFromInterface(int $throughDeadline)
+{
+	//set verbosity level
+	string $ddl_verbosityLevel = `optionMenu -q -v ddl_verbosityLevel`;
+	int $verbosityLevel = 0;
+	if ($ddl_verbosityLevel == "progress")  $verbosityLevel = 1;
+	if ($ddl_verbosityLevel == "debug") $verbosityLevel = 2;
+	
+	//NOTE: If you change anything here, you have to change it in the deadline version as well (in this file)
+
+	string $outputBaseFolder = `textField -q -text txt_outputBasePath`;
+	string $txt_outputFolder = `textField -q -text txt_outputFolder` + "/" + `textField -q -text txt_outputVersionFolder`;
+	string $txt_filePrefix = `textField -q -text txt_filePrefix`;
+	string $PRTFolder = $outputBaseFolder + "/" + $txt_outputFolder+ "/";
+	
+	//set render range
+	int $theFrameToRender = `currentTime -query`;
+	int $frameStart = $theFrameToRender;
+	int $frameEnd = $theFrameToRender;
+	
+	int $ddl_exportAnimation = `optionMenu -q -sl ddl_exportAnimation`;
+	if ($ddl_exportAnimation == 1) //scene range
+	{
+		$frameStart = `playbackOptions -q -min`;
+		$frameEnd = `playbackOptions -q -max`;
+	}
+	if ($ddl_exportAnimation == 2) //render range
+	{
+		$frameStart = `getAttr defaultRenderGlobals.startFrame`;
+		$frameEnd = `getAttr defaultRenderGlobals.endFrame`;
+	}
+	
+	//setup partition information	
+	int $partitionCount = `intSliderGrp -q -v  int_partitionsCount`;   
+	
+	int $partitionStart = 1;
+	int $partitionEnd = $partitionCount;
+	
+	if (`checkBox -q -v chk_partitionSubRange`)
+	{
+		$partitionStart = `intSliderGrp -q -v int_fromPartition`;
+		$partitionEnd = `intSliderGrp -q -v int_toPartition`;
+	}
+	
+	int $saveMode = 1;
+	if( `checkBox -q -v chk_saveMode` ) {
+		$saveMode = 0;
+	}
+	
+	int $renderCurrent = 0;
+
+
+	if ($ddl_exportAnimation == 3 && $saveMode != 1)
+	{
+		$renderCurrent = 1;
+		$frameStart = `playbackOptions -q -min`;		
+	}
+	
+	//Channel Randomizations
+	int $randomizeChannels = `checkBox -q -v chk_randomizeParticleChannels`;	
+	int $randomizeChannelPosition = `checkBox -q -v chk_randomizeChannelPosition`;
+	int $randomizeChannelVelocity = `checkBox -q -v chk_randomizeChannelVelocity`;
+	float $randomizeChannelPositionRadius = `floatSliderGrp -q -v flt_randomizeChannelPositionRadius`;
+	float $randomizeChannelVelocityRadius = `floatSliderGrp -q -v flt_randomizeChannelVelocityRadius`;
+	int $incrementSeeds = `checkBox -q -v chk_incrementRandomSeeds`;
+	
+	int $chk_saveChannelVelocity = `checkBox -q -v chk_saveChannelVelocity`;
+	string $ddl_saveChannelVelocityFormat = `optionMenu -q -v ddl_saveChannelVelocityFormat`;
+	int $chk_saveChannelDensity = `checkBox -q -v chk_saveChannelDensity`;
+	string $ddl_saveChannelDensityFormat = `optionMenu -q -v ddl_saveChannelDensityFormat`;
+	int $chk_saveChannelColor = `checkBox -q -v chk_saveChannelColor`;
+	string $ddl_saveChannelColorFormat = `optionMenu -q -v ddl_saveChannelColorFormat`;
+	int $chk_saveChannelID = `checkBox -q -v chk_saveChannelID`;
+	string $ddl_saveChannelIDFormat = `optionMenu -q -v ddl_saveChannelIDFormat`;
+	int $chk_saveChannelNormal = `checkBox -q -v chk_saveChannelNormal`;
+	string $ddl_saveChannelNormalFormat = `optionMenu -q -v ddl_saveChannelNormalFormat`;
+	int $chk_saveChannelRotation = `checkBox -q -v chk_saveChannelRotation`;
+	string $ddl_saveChannelRotationFormat = `optionMenu -q -v ddl_saveChannelRotationFormat`;
+	int $chk_saveChannelEmission = `checkBox -q -v chk_saveChannelEmission`;
+	string $ddl_saveChannelEmissionFormat = `optionMenu -q -v ddl_saveChannelEmissionFormat`;
+	
+	int $chk_saveChannelAge = `checkBox -q -v chk_saveChannelAge`;
+	string $ddl_saveChannelAgeFormat = `optionMenu -q -v ddl_saveChannelAgeFormat`;
+	int $chk_saveChannelLifeSpan = `checkBox -q -v chk_saveChannelLifeSpan`;
+	string $ddl_saveChannelLifeSpanFormat = `optionMenu -q -v ddl_saveChannelLifeSpanFormat`;
+	
+
+	string $saveFileFormat = `optionMenu -q -v ddl_saveFileFormat`;
+	
+	string $channelInfo[] = {};
+	if ($chk_saveChannelVelocity > 0) appendStringArray($channelInfo, {"velocity", $ddl_saveChannelVelocityFormat}, 2);
+	if ($chk_saveChannelDensity > 0) appendStringArray($channelInfo, {"opacity", $ddl_saveChannelDensityFormat}, 2);
+	if ($chk_saveChannelColor > 0) appendStringArray($channelInfo, {"rgb", $ddl_saveChannelColorFormat}, 2);
+	if ($chk_saveChannelID > 0) appendStringArray($channelInfo, {"particleId", $ddl_saveChannelIDFormat}, 2);
+	if ($chk_saveChannelNormal > 0) appendStringArray($channelInfo, {"normalDir", $ddl_saveChannelNormalFormat}, 2);
+	if ($chk_saveChannelRotation > 0) appendStringArray($channelInfo, {"rotation", $ddl_saveChannelRotationFormat}, 2);
+	if ($chk_saveChannelEmission > 0) appendStringArray($channelInfo, {"incandescence", $ddl_saveChannelEmissionFormat}, 2);
+	if ($chk_saveChannelAge > 0) appendStringArray($channelInfo, {"age", $ddl_saveChannelAgeFormat}, 2);
+	if ($chk_saveChannelLifeSpan > 0) appendStringArray($channelInfo, {"lifespan", $ddl_saveChannelLifeSpanFormat}, 2);
+
+	string $allObjects[] = `textScrollList -q -ai lbx_objectsToSave`;
+	
+	// Sanity check
+	int $valid = exportToPRT_SanityCheck ($allObjects, $saveMode);
+		
+	if( $valid )
+	{
+		if( $throughDeadline == 0)
+		{
+			exportToPRT($allObjects, $PRTFolder, $txt_filePrefix, $partitionCount, $partitionStart, $partitionEnd, $frameStart, $frameEnd, $incrementSeeds, $randomizeChannels, $randomizeChannelPosition, $randomizeChannelPositionRadius,
+				$randomizeChannelVelocity, $randomizeChannelVelocityRadius, $channelInfo, $saveMode, $renderCurrent, $verbosityLevel, $saveFileFormat);
+		}
+		else 
+		{
+			exportThroughDeadline($allObjects, $PRTFolder, $txt_outputFolder, $txt_filePrefix, $partitionCount, $partitionStart, $partitionEnd, $frameStart, $frameEnd, $incrementSeeds, $randomizeChannels, $randomizeChannelPosition, $randomizeChannelPositionRadius,
+				$randomizeChannelVelocity, $randomizeChannelVelocityRadius, $channelInfo, $saveMode, $renderCurrent, $verbosityLevel, $saveFileFormat);
+		}
+	}
+}
+
+//
+//Input: Same as exportToPRT
+//
+global proc exportThroughDeadline (string $objectsToSave[], string $PRTFolder, string $txt_outputFolder, string $txt_filePrefix, int $partitionCount, int $partitionStart, int $partitionEnd, int $frameStart, int $frameEnd,int $incrementSeeds,
+	int $randomizeChannels,int $randomizeChannelPosition, float $randomizeChannelPositionRadius,int $randomizeChannelVelocity,float $randomizeChannelVelocityRadius, string $channelInfo[],
+	int $saveMode, int $renderCurrent, int $verbosityLevel, string $saveFileFormat)
+{
+	string $deadlineJobName = `textFieldGrp -q -text txt_deadlineJobName`;
+	if( `size $deadlineJobName` == 0 )
+	{
+		$deadlineJobName = "Untitled";
+	}
+	string $deadlineComment = `textFieldGrp -q -text txt_deadlineComment`;
+	string $deadlineDepartment = `textFieldGrp -q -text txt_deadlineDepartment`;
+	string $deadlinePool = `optionMenu -q -v ddl_deadlinePool`;
+	string $deadlineGroup = `optionMenu -q -v ddl_deadlineGroup`;
+	int $deadlinePriority = `intSliderGrp -q -v  int_deadlinePriority`;
+
+	string $tempfolder =  (`getenv TMPDIR` + "/");
+	string $deadlinecmd = getDeadlineCommand();
+
+	string $jobJobFileName =    ($tempfolder + "kmy2prtjob.job");
+	string $pluginJobFileName = ($tempfolder + "kmy2prtplugin.job");
+	string $runscriptBaseFileName = "kmy2prtjob.mel";
+	string $runscriptFileName = ($tempfolder + $runscriptBaseFileName);
+
+	string $projectFolder = `KMY2PRT_getOutputFolder`;
+	string $currentFile = `file -q -sn`;
+	string $currentFileBase = `file -q -shn -sn`;
+
+	$mayaVersion = `getApplicationVersionAsFloat`;
+
+	if( `size $currentFile` == 0 )
+	{
+		//Newly created scene with no previous save
+		$response = `confirmDialog -title "PRT Export to Deadline" 
+			              -message "Scene must be saved before proceeding"
+			              -button "OK"
+			              -defaultButton "OK"
+			              -cancelButton "OK"
+			              -dismissString "OK"`;
+
+		return;
+	}
+	
+	if( `getApplicationVersionAsFloat` >= 2013 ) {
+		if( `deadlineRequiresSave` ) {
+			//Previous save has some modifications
+			$response = `confirmDialog -title "PRT Export to Deadline" 
+							  -message "Scene has been changed.  Particles will be generated based on the last save.  Would you like to save the scene first?"
+							  -button "Yes"
+							  -button "No"
+							  -button "Cancel"
+							  -defaultButton "Yes"
+							  -cancelButton "Cancel"
+							  -dismissString "Cancel"`;
+		
+			if( $response == "Cancel" )
+				return;
+			else if( $response == "Yes" ){
+				file -s;
+			}
+		}
+	} else {
+		//we want to ask if the user should save
+		$response = `confirmDialog -title "PRT Export to Deadline" 
+							-message "Particle are generated based on the last scene save.  If you have not saved your scene, you must do so before exporting.\n\nWould you like to save the scene now?"
+							-button "Save Scene"
+							-button "Proceed without Save"
+							-button "Cancel"
+							-defaultButton "Save Scene"
+							-cancelButton "Cancel"
+							-dismissString "Cancel"`;
+		
+		if( $response == "Cancel" )
+			return;
+		else if( $response == "Save Scene" ){
+			file -s;
+		}
+	}
+
+	$pluginJobFile = `fopen $pluginJobFileName "w"`;
+	fprint $pluginJobFile ("SceneFile=" +           $currentFile           + "\n");
+	fprint $pluginJobFile ("Version=" +             $mayaVersion           + "\n");
+	fprint $pluginJobFile ("Build=" +               "None"                 + "\n");
+	fprint $pluginJobFile ("ProjectPath=" +         `workspace -q -fn`     + "\n");
+	fprint $pluginJobFile ("StrictErrorChecking=" + "True"                 + "\n");
+	fprint $pluginJobFile ("ScriptJob=" +           "True"                 + "\n");
+	fprint $pluginJobFile ("ScriptFilename=" +      $runscriptBaseFileName + "\n");
+	fclose $pluginJobFile;
+
+	$framesStr = "0";
+	if ($saveMode == 0) // Multiple partitions is enabled, so make a task for each partition. otherwise just do one task ("frame" 0)
+		$framesStr = $partitionStart + "-" + $partitionEnd;
+	
+	$jobJobFile = `fopen $jobJobFileName "w"`;
+	fprint $jobJobFile ("Plugin=" +                             "MayaBatch"                             + "\n");
+	fprint $jobJobFile ("Name=" +                               $deadlineJobName                        + "\n");
+	fprint $jobJobFile ("Comment=" +                            $deadlineComment                        + "\n");
+	fprint $jobJobFile ("Department=" +                         $deadlineDepartment                     + "\n");
+	fprint $jobJobFile ("Pool=" +                               $deadlinePool                           + "\n");
+	fprint $jobJobFile ("Group=" +                              $deadlineGroup                          + "\n");
+	fprint $jobJobFile ("Priority=" +                           $deadlinePriority                       + "\n");
+	fprint $jobJobFile ("TaskTimeoutMinutes=" +                 "0"                                     + "\n");
+	fprint $jobJobFile ("EnableAutoTimeout=" +                  "False"                                 + "\n");
+	fprint $jobJobFile ("ConcurrentTasks=" +                    "1"                                     + "\n");
+	fprint $jobJobFile ("LimitConcurrentTasksToNumberOfCpus=" + "True"                                  + "\n");
+	fprint $jobJobFile ("MachineLimit=" +                       "0"                                     + "\n");
+	fprint $jobJobFile ("Whitelist=" +                          ""                                      + "\n");
+	fprint $jobJobFile ("LimitGroups=" +                        ""                                      + "\n");
+	fprint $jobJobFile ("JobDependencies=" +                    ""                                      + "\n");
+	fprint $jobJobFile ("OnJobComplete=" +                      "Nothing"                               + "\n");
+	fprint $jobJobFile ("Frames=" +                             $framesStr                              + "\n");
+	fprint $jobJobFile ("ChunkSize=" +                          "1"                                     + "\n");
+	fclose $jobJobFile;
+
+	$runscriptFile = `fopen $runscriptFileName "w"`;
+
+	//Force Krakatoa MY plugin to load, and ensure it actually worked by checking if exportToPRT is defined. for some reason, Krakatoa isn't always loaded at this point, but other times it is.
+	//Note: Printing "Fatal Error:" will cause Deadline to fail the job.
+	fprint $runscriptFile ("loadPlugin -qt \"MayaKrakatoa\";\n");
+	fprint $runscriptFile ("if( !`exists exportToPRT` )\n");
+	fprint $runscriptFile ("    error(\"Fatal Error: Krakatoa MY does not appear to be correctly installed, or its scripts have not yet been executed. Please ensure Krakatoa MY is installed and set to auto-load.\");\n"); //adding "Fatal Error:" failes the Deadline render
+
+	fprint $runscriptFile ("//Get the start and end partitions\n");
+	fprint $runscriptFile ("int $startPartition = (int)DeadlineValue( \"StartFrame\" );\n");
+	fprint $runscriptFile ("int $endPartition = (int)DeadlineValue( \"EndFrame\" );\n");
+	fprint $runscriptFile ("\n");
+
+	//NOTE: If you change anything here, you have to change it in the NON-deadline version as well (in this file)
+	string $outputBaseFolder = `textField -q -text txt_outputBasePath`;
+	$txt_outputFolder = `textField -q -text txt_outputFolder` + "/" + `textField -q -text txt_outputVersionFolder`;
+	$txt_filePrefix = `textField -q -text txt_filePrefix`;
+	$PRTFolder = $outputBaseFolder + "/" + $txt_outputFolder+ "/";
+
+	fprint $runscriptFile ("//Generate the partitions\n");
+	fprint $runscriptFile ("exportToPRT(");
+	fprint $runscriptFile (`arrayToString $objectsToSave`   + ",");
+	fprint $runscriptFile (`stringToString $PRTFolder`      + ",");
+	fprint $runscriptFile (`stringToString $txt_filePrefix` + ",");
+	fprint $runscriptFile ($partitionCount                  + ",");
+	fprint $runscriptFile ("$startPartition"                + ",");
+	fprint $runscriptFile ("$endPartition"                  + ",");
+	fprint $runscriptFile ($frameStart                      + ",");
+	fprint $runscriptFile ($frameEnd                        + ",");
+	fprint $runscriptFile ($incrementSeeds                  + ",");
+	fprint $runscriptFile ($randomizeChannels               + ",");
+	fprint $runscriptFile ($randomizeChannelPosition        + ",");
+	fprint $runscriptFile ($randomizeChannelPositionRadius  + ",");
+	fprint $runscriptFile ($randomizeChannelVelocity        + ",");
+	fprint $runscriptFile ($randomizeChannelVelocityRadius  + ",");
+	fprint $runscriptFile (`arrayToString $channelInfo`     + ",");
+	fprint $runscriptFile ($saveMode                        + ",");
+	fprint $runscriptFile ($renderCurrent                   + ",");
+	fprint $runscriptFile ($verbosityLevel                  + ",");
+	fprint $runscriptFile (`stringToString $saveFileFormat`);
+	fprint $runscriptFile (");\n");
+	fclose $runscriptFile;
+
+	string $command = (($deadlinecmd) + " " + ($jobJobFileName) + " " + ($pluginJobFileName) + " " + ($runscriptFileName));
+	print ($command + "\n");
+	$result = `system($command)`;
+	print ($result + "\n");
+
+	$response = `confirmDialog -title "PRT Export to Deadline" 
+			            -message "Job has been exported to Deadline."
+			            -button "OK"
+			            -defaultButton "OK"
+			            -cancelButton "OK"
+			            -dismissString "OK"`;
+}
+
+//
+//Input
+//$objectsToSave: the objects you wish to save
+//$PRTFolder: The folder to be save into(eg. C:/Users/<user>/Documents/maya/projects/default/PRT/v001
+//$txt_filePrefix: The prefix for all files (eg.Particles)
+//$partitionCount: The total number of partitions this is out of
+//$partitionStart: Partition to start on (max = &partitionCount)
+//$partitionEnd: Final Partition(max = $partition Count)
+//$frameStart: initial frame of the render
+//$frameEnd: end frame of the render
+//$incrementSeeds: 1 increment seeds for randomization on particle systems
+//$randomizeChannels: would you like to randomize channels
+//$randomizeChannelPosition: would you like to randomize position (randomize channels must be 1)
+//$randomizeChannelPositionRadius: what radius would you like to randomize in (randomizechannels and randomizechannelPosition must be 1 for this to have an effecet
+//$randomizeChannelVelocity:would you like to randomize velocity (randomize channels must be 1)
+//$randomizeChannelVelocityRadius:what radius would you like to randomize in (randomizechannels and randomizechannelVelocity must be 1 for this to have an effecet
+//$channelInfo: information about the channels for particle systems must be an even number, alternating channel name, and datatype, eg. {"velocity", "float32[3]"}
+//					Position will always be included
+//$savemode: 0 = "Multiple Partitions", 1 = "One Sequence"
+//$renderCurrent: if 1 will only render the final frame (used for multiple partitions + current frame to jitter and render properly)
+//$verbosityLevel:0 = none, 1 = progress, 2 = debug 
+//$fileFormat: The file format you would like to output to. "prt", "csv", "bin"
+//eg exportToPRT( {"PRTFractal1","NParticleShape1"}, "C:/Users/<user>/Documents/maya/projects/default/PRT/v001","TEST", 3, 1, 3,  4, 24,  1, 1, 1,0.25, 0,0.0, {"velocity","float16[3]","rgb","float16[3]"},
+//		0, 0, 0, "prt");
+//THIS IS THE ACTUAL EXPORT FUNCTION
+global proc exportToPRT (string $objectsToSave[], string $PRTFolder, string $txt_filePrefix, int $partitionCount, int $partitionStart, int $partitionEnd, int $frameStart, int $frameEnd,int $incrementSeeds,
+	int $randomizeChannels,int $randomizeChannelPosition, float $randomizeChannelPositionRadius,int $randomizeChannelVelocity,float $randomizeChannelVelocityRadius, string $channelInfo[],
+	int $saveMode, int $renderCurrent, int $verbosityLevel, string $saveFileFormat)
+{
+	//PRINT DEBUG MESSAGE
+	print "\n//EXPORT TO PRT BEGIN\n";
+	print "exportToPRT(\n";
+	print "    ";
+	print "{"; for( $a in $objectsToSave ) print ("\"" + $a + "\","); print "}";
+	print ", //$objectsToSave[]\n";
+	print ("    \"" + $PRTFolder + "\", //$PRTFolder\n");
+	print ("    \"" + $txt_filePrefix + "\", //$txt_filePrefix\n");
+	print ("    " + $partitionCount + ", //$partitionCount\n");
+	print ("    " + $partitionStart + ", //$partitionStart\n");
+	print ("    " + $partitionEnd + ", //$partitionEnd\n");
+	print ("    " + $frameStart + ", //$frameStart\n");
+	print ("    " + $frameEnd + ", //$frameEnd\n");
+	print ("    " + $incrementSeeds + ", //$incrementSeeds\n");
+	print ("    " + $randomizeChannels + ", //$randomizeChannels\n");
+	print ("    " + $randomizeChannelPosition + ", //$randomizeChannelPosition\n");
+	print ("    " + $randomizeChannelPositionRadius + ", //$randomizeChannelPositionRadius\n");
+	print ("    " + $randomizeChannelVelocity + ", //$randomizeChannelVelocity\n");
+	print ("    " + $randomizeChannelVelocityRadius + ", //$randomizeChannelVelocityRadius\n");
+	print "    ";
+	print "{"; for( $a in $channelInfo ) print ("\"" + $a + "\","); print "}";
+	print ", //$channelInfo[]\n";
+	print ("    " + $saveMode + ", //$saveMode\n");
+	print ("    " + $renderCurrent + ", //$renderCurrent\n");
+	print ("    " + $verbosityLevel + ", //$verbosityLevel\n");
+	print ("    \"" + $saveFileFormat + "\" ) //$saveFileFormat\n");
+
+
+
+	global string $gMainProgressBar;
+
+	if ($verbosityLevel > 0) print "// KMY2PRT: Saving Particles...\n";
+	
+	string $channelInfoParticle[] = { "position", "float32[3]" };
+	string $channelInfoPRTVolume[] = { "position", "float32[3]" };
+	string $channelInfoPRTFractal[] = { "position", "float32[3]" };
+	string $channelInfoPRTLoader[] = { "position", "float32[3]" };
+	
+	int $pos = _stringArrayFind("velocity",0,$channelInfo);
+	if($pos >= 0)
+	{
+		appendStringArray($channelInfoParticle, {"velocity", $channelInfo[$pos+1]}, 2);
+		appendStringArray($channelInfoPRTVolume, {"velocity", $channelInfo[$pos+1]}, 2);
+	}
+	
+	$pos = _stringArrayFind("opacity",0,$channelInfo);
+	if($pos >= 0)
+	{
+		appendStringArray($channelInfoParticle, {"opacity", $channelInfo[$pos+1]}, 2);
+		appendStringArray($channelInfoPRTVolume, {"opacity", $channelInfo[$pos+1]}, 2);
+		appendStringArray($channelInfoPRTFractal, {"opacity", $channelInfo[$pos+1]}, 2);
+		appendStringArray($channelInfoPRTLoader, {"opacity", $channelInfo[$pos+1]}, 2);
+	}
+	
+	$pos = _stringArrayFind("rgb",0,$channelInfo);
+	if($pos >= 0)
+	{
+		appendStringArray($channelInfoParticle, {"rgb", $channelInfo[$pos+1]}, 2);
+		appendStringArray($channelInfoPRTVolume, {"rgb", $channelInfo[$pos+1]}, 2);
+		appendStringArray($channelInfoPRTFractal, {"rgb", $channelInfo[$pos+1]}, 2);
+		appendStringArray($channelInfoPRTLoader, {"rgb", $channelInfo[$pos+1]}, 2);
+	}
+	
+	$pos = _stringArrayFind("particleId",0,$channelInfo);
+	if($pos >= 0)
+	{
+		appendStringArray($channelInfoParticle, {"particleId", $channelInfo[$pos+1]}, 2);
+	}
+	
+	$pos = _stringArrayFind("normalDir",0,$channelInfo);
+	if($pos >= 0)
+	{
+		appendStringArray($channelInfoParticle, {"normalDir", $channelInfo[$pos+1]}, 2);
+		appendStringArray($channelInfoPRTVolume, {"normalDir", $channelInfo[$pos+1]}, 2);
+		appendStringArray($channelInfoPRTFractal, {"normalDir", $channelInfo[$pos+1]}, 2);
+		appendStringArray($channelInfoPRTLoader, {"normalDir", $channelInfo[$pos+1]}, 2);
+	}
+	
+	$pos = _stringArrayFind("rotation",0,$channelInfo);
+	if($pos >= 0)
+	{
+		appendStringArray($channelInfoParticle, {"rotation", $channelInfo[$pos+1]}, 2);
+	}
+	
+	$pos = _stringArrayFind("incandescence",0,$channelInfo);
+	if($pos >= 0)
+	{
+		appendStringArray($channelInfoParticle, {"incandescence", $channelInfo[$pos+1]}, 2);
+		appendStringArray($channelInfoPRTVolume, {"incandescence", $channelInfo[$pos+1]}, 2);
+		appendStringArray($channelInfoPRTFractal, {"incandescence", $channelInfo[$pos+1]}, 2);
+		appendStringArray($channelInfoPRTLoader, {"incandescence", $channelInfo[$pos+1]}, 2);
+	}
+	
+	$pos = _stringArrayFind("age",0,$channelInfo);
+	if($pos >= 0)
+	{
+		appendStringArray($channelInfoParticle, {"age", $channelInfo[$pos+1]}, 2);
+	}
+	
+	$pos = _stringArrayFind("lifespan",0,$channelInfo);
+	if($pos >= 0)
+	{
+		appendStringArray($channelInfoParticle, {"lifespan", $channelInfo[$pos+1]}, 2);
+	}
+
+	sysFile -makeDir $PRTFolder ;
+	if ($verbosityLevel > 0) print ("// KMY2PRT: Output Folder: ["+ $PRTFolder +"]\n");
+		$PRTFolder = $PRTFolder + "/" + $txt_filePrefix + "_" ;
+
+		
+	if ($saveMode ==  1) 
+	{
+		$partitionStart = 1;
+		$partitionEnd = 1;
+	}
+	string $partitionCountString = $partitionCount ;
+	if ($partitionStart > $partitionCount) $partitionStart = $partitionCount;
+	if ($partitionEnd > $partitionCount) $partitionEnd = $partitionCount;
+	
+	int $totalPartitions = $partitionEnd-$partitionStart+1;
+
+	
+	
+	progressBar -edit
+	    -beginProgress
+	    -isInterruptable true
+	    -status ("PRT Saving")// "+$ddl_exportAnimation
+	    -maxValue $totalPartitions 
+	    $gMainProgressBar;		
+	
+	
+	int $partitionIterator;
+	for ($partitionIterator = $partitionStart; $partitionIterator<=$partitionEnd; $partitionIterator++)
+	{
+		string $anObject;
+		
+		if ($saveMode != 1) //If partitioning, increment the seeds
+		{
+			if ($incrementSeeds) 
+			{
+				for ($anObject in $objectsToSave)
+				{
+					string $theNodeType = `nodeType $anObject`;
+					if ($verbosityLevel > 0) print ("// KMY2PRT: Incrementing Random Seeds in ["+ $anObject +"] of type ["+$theNodeType+"] ");
+					
+					if ($theNodeType == "PRTVolume" || $theNodeType == "PRTSurface") 
+					{
+						int $randomSeed =  eval ("getAttr " + $anObject+".randomSeed;"); 
+						if ($verbosityLevel > 0) print ("from "+$randomSeed);
+						$randomSeed = $randomSeed + $partitionIterator - 1;
+						eval ("setAttr " + $anObject+".randomSeed " + $randomSeed + ";");
+						if ($verbosityLevel > 0) print (" to "+$randomSeed +"\n");
+					}
+					else if ($theNodeType != "PRTFractal" && $theNodeType != "PRTLoader")
+					{
+						string $usedSeeds[];
+						string $objectSource;
+						if ( $theNodeType == "PRTMayaParticle" ) {
+							$objectSource = `KMY_getMayaParticleFromPRTMayaParticle $anObject`;
+						} else {
+							$objectSource = $anObject;
+						}
+
+						if ( $theNodeType == "particle" || $theNodeType == "nParticle" ) {
+							// Deformed shape does not have a seed attribute.  We need to update the original
+							string $original = `KMY_mayaParticleGetOriginal $objectSource`;
+							if ( $original != "" )
+								$objectSource = $original;
+						}
+						$usedSeeds = `listAttr -multi ( $objectSource + ".seed" )`;
+
+						for($usedSeed in $usedSeeds)
+						{
+							int $randomSeed =  `getAttr ($objectSource + "." + $usedSeed)`; 
+							if ($verbosityLevel > 0) print ("from "+$randomSeed);
+						
+							$randomSeed = $randomSeed + $partitionIterator - 1;
+							setAttr ($objectSource + "." + $usedSeed) $randomSeed;
+							if ($verbosityLevel > 0) print (" to "+$randomSeed +"\n");
+						}
+					}
+				}
+			}
+		}
+		
+		progressBar -edit
+			-step 1 $gMainProgressBar;
+			
+		float $timeSliderStep = `playbackOptions -q -by`;
+		int $last_id = -1;
+		int $last_id1 = -1;
+		int $last_id2 = -1;
+		int $last_id3 = -1;		
+		
+		float $frameIterator;
+		
+		int $firstFrame = $frameStart;
+		int $currentFrameCounter = $frameStart;
+		// if ($timeSliderStep != 1.0) $currentFrameCounter = 1;
+		
+		for ($frameIterator = $frameStart; $frameIterator<=$frameEnd; $frameIterator = $frameIterator + $timeSliderStep)
+		{
+			currentTime $frameIterator;
+			$theFrameToRender = $currentFrameCounter;
+			$rendOutputFramenumber = padWithLeadingZeros ($theFrameToRender,4);
+			
+			if(`progressBar -query -isCancelled $gMainProgressBar`)
+				break;
+
+			if ($verbosityLevel > 0) print ("// KMY2PRT: Processing Frame "+$frameIterator+"... \n");
+
+			string $anObject;
+			for ($anObject in $objectsToSave)
+			{
+				string $theNodeType = `nodeType $anObject`;
+				if ($verbosityLevel > 0) print ("\t// KMY2PRT: Saving Particles from ["+$anObject+"] of type ["+$theNodeType+"]...\n");
+
+				string $partitionSignatureString = "";
+				if ($saveMode !=  1) 
+				{
+					$partitionSignatureString = "_part"+(padWithLeadingZeros ($partitionIterator, (`size $partitionCountString`) )+"of"+$partitionCount);
+				}
+				string $thePRTFile = ($PRTFolder+$anObject+ $partitionSignatureString +"_"+ padWithLeadingZeros ($theFrameToRender,4) +"."+$saveFileFormat);
+				$thePRTFile = `purifyname $thePRTFile`;
+
+				if ($verbosityLevel > 0) 
+					print ("// KMY2PRT: Saving ["+ $thePRTFile + "]\n");
+				
+				$licenseFail = 0;
+				if ($theNodeType == "PRTVolume" || $theNodeType == "PRTSurface") 
+				{
+					if (($renderCurrent ==1) && ($saveMode !=  1))
+					{
+						if ($frameIterator == $frameEnd)
+						{
+							$licenseFail = catch( `PRTExporter $thePRTFile $anObject $channelInfoPRTVolume` );
+						}
+					}
+					else
+					{
+						$licenseFail = catch( `PRTExporter $thePRTFile $anObject $channelInfoPRTVolume` );
+					}
+				}
+				else
+				{
+					string $objectSource;
+					string $renderSource;
+					if ( $theNodeType == "PRTMayaParticle" ) {
+						$objectSource = `KMY_getMayaParticleFromPRTMayaParticle $anObject`;
+						$renderSource = $anObject;
+					} else if ( $theNodeType == "particle" || $theNodeType == "nParticle" ) {
+						if ($theNodeType == "nParticle" && `getApplicationVersionAsFloat` >= 2022) {
+							// If the object is an nParticle, we need to update the nucleus and nParticle objects
+							// manually in Maya 2022 and later.
+							// We need to find the nucleus that is connected to the nParticles object.
+							// There will be multiple connections between the nucleus and nParticles object,
+							// so we get the list and just use the first one.
+							string $connectedNucleus[] = `listConnections -type nucleus $anObject`;
+							if (`size($connectedNucleus)` >= 1)
+							{
+								dgdirty $connectedNucleus[0];
+								dgdirty $anObject;
+								dgeval $connectedNucleus[0];
+								dgeval $anObject;
+							}
+							// Also we need to update the emitters and nParticle objects
+							string $connectedEmitters[] = `listConnections -type pointEmitter $anObject`;
+							if (`size($connectedEmitters)` >= 1)
+							{
+								dgdirty $connectedEmitters[0];
+								dgdirty $anObject;
+								dgeval $connectedEmitters[0];
+								dgeval $anObject;
+							}
+						}
+
+						$objectSource = $anObject;
+						$renderSource = `KMY_getPRTMayaParticleFromMayaParticle $anObject false`;
+						if ( $renderSource == "" ) $renderSource = $anObject;
+					} else{
+						$objectSource = $anObject;
+						$renderSource = $anObject;
+					}
+
+					string $nodeType2 = `nodeType $objectSource`;
+					if ( $nodeType2 == "particle" || $nodeType2 == "nParticle" ) {
+						// Deformed shape causes problems.  We need to update the original
+						//string $original = `KMY_mayaParticleGetOriginal $objectSource`;
+						//if ( $original != "" )
+						//	$objectSource = $original;
+					}
+
+					if ($randomizeChannels && ($saveMode !=  1) && $theNodeType != "PRTFractal" && $theNodeType != "PRTLoader")
+					{
+						int $theSeed = ($partitionIterator* 100000 + $currentFrameCounter);
+						if ($randomizeChannelPosition)
+						{
+							$last_id1 = `KrakatoaParticleJitter -node $objectSource -radius $randomizeChannelPositionRadius -seed $theSeed -mId $last_id -channel "position"`;
+						}
+						if ($randomizeChannelVelocity)
+						{
+							$last_id2 = `KrakatoaParticleJitter -node $objectSource -radius $randomizeChannelVelocityRadius -seed $theSeed -mId $last_id -channel "velocity"`;
+						}
+						// $last_id3 = `KrakatoaParticleJitter -node $objectSource -radius .5 -seed $theSeed -mId $last_id -channel "acceleration"`;
+						if ($randomizeChannelPosition) $last_id = $last_id1;
+						if ($randomizeChannelVelocity) $last_id = $last_id2;
+					}
+					if (($renderCurrent == 1) && ($saveMode != 1))
+					{
+						if ($frameIterator == $frameEnd)
+						{
+							$licenseFail = catch( `PRTExporter $thePRTFile $renderSource $channelInfoParticle` );
+						}
+					}
+					else
+					{
+						$licenseFail = catch( `PRTExporter $thePRTFile $renderSource $channelInfoParticle` );
+					}
+				}
+				if( $licenseFail )
+				{
+					//end the loop and return from the function if the license couldn't be checked out above.
+					progressBar -edit
+						-endProgress
+						$gMainProgressBar;
+					return;
+				}
+			}//end anObject loop
+
+			if ($verbosityLevel > 0) print ("// KMY2PRT: Frame "+ $frameIterator +" Saved.\n");	
+			$currentFrameCounter++;
+		} //end animation output loop
+		if ($saveMode !=  1) //If partitioning, decrement the seeds
+		{
+			if ($incrementSeeds) 
+			{			
+				for ($anObject in $objectsToSave)
+				{
+					string $theNodeType = `nodeType $anObject`;
+					if ($verbosityLevel == 2) print ("// KMY2PRT: Decrementing Random Seeds in ["+ $anObject +"] of Type ["+$theNodeType+"] ");
+					if ($theNodeType == "PRTVolume" || $theNodeType == "PRTSurface") 
+					{
+						int $randomSeed =  eval ("getAttr " + $anObject+".randomSeed;"); 
+						if ($verbosityLevel > 0) print ("from "+$randomSeed);
+						$randomSeed = $randomSeed - $partitionIterator + 1;
+						eval ("setAttr " + $anObject+".randomSeed " + $randomSeed + ";");
+						if ($verbosityLevel > 0) print (" to "+$randomSeed +"\n");
+					}
+					else if ($theNodeType != "PRTFractal" && $theNodeType != "PRTLoader")
+					{
+						string $usedSeeds[];
+						string $objectSource;
+						if ( $theNodeType == "PRTMayaParticle" ) {
+							$objectSource = `KMY_getMayaParticleFromPRTMayaParticle $anObject`;
+						} else {
+							$objectSource = $anObject;
+						}
+
+						if ( $theNodeType == "particle" || $theNodeType == "nParticle" ) {
+							// Deformed shape does not have a seed attribute.  We need to update the original
+							string $original = `KMY_mayaParticleGetOriginal $objectSource`;
+							if ( $original != "" )
+								$objectSource = $original;
+						}
+						$usedSeeds = `listAttr -multi ( $objectSource + ".seed" )`;
+
+						for($usedSeed in $usedSeeds)
+						{
+							int $randomSeed =  `getAttr ($objectSource + "." + $usedSeed)`; 
+							if ($verbosityLevel > 0) print ("from "+$randomSeed);
+						
+							$randomSeed = $randomSeed - $partitionIterator + 1;
+							setAttr ($objectSource + "." + $usedSeed) $randomSeed;
+							if ($verbosityLevel > 0) print (" to "+$randomSeed +"\n");
+						}
+					}				
+				}
+			}
+		}
+	} //end partition loop
+
+	progressBar -edit
+	    -endProgress
+	    $gMainProgressBar;
+}

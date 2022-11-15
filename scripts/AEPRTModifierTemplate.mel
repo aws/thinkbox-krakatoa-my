@@ -1,0 +1,330 @@
+// Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
+////////////////////////////////////
+// Attribute Editor Template for the Modifiers Node
+//
+// Written By: Matthew Yu
+// Thinkbox Software Inc.
+// 2013
+///////////////////////////////////
+
+global proc AEPRTModifierTemplate( string $nodeName ) {
+
+	global int $PRTModifiersSourceChannelChangedJobID = -1;
+	global int $PRTModifiersDestinationChannelChangedJobID = -1;
+	global int $PRTModifiersChannelChangedJobID = -1;
+	global int $PRTModifiersUVWChannelChangedJobID = -1;
+
+	editorTemplate -beginScrollLayout;
+
+	editorTemplate -beginLayout "Modifier" -collapse false;
+		editorTemplate -label "Enabled" -addControl "inEnabled";
+		editorTemplate -label "Name" -addControl "inModifiersName";
+		editorTemplate -label "Type" -addControl "inModifiersMethod";
+		editorTemplate -callCustom "PRTModifiers_settingsLabel" "PRTModifiers_settingsLabelUpdate" "inModifiersMethod";
+	editorTemplate -endLayout;
+	
+	editorTemplate -beginLayout "Settings" -collapse false;
+		editorTemplate -label "Evaluate In Viewport" -addControl "KMod_Evaluate_In_Viewport";
+		
+		editorTemplate -callCustom "PRTModifiers_Channel" "PRTModifiers_ChannelUpdate" "KMod_Channel_Name";
+		editorTemplate -label "Channel Value" -addControl "KMod_Channel_Value";
+		editorTemplate -label "Channel Scale" -addControl "KMod_Channel_Scale";
+		
+		editorTemplate -callCustom "PRTModifiers_SourceChannel" "PRTModifiers_SourceChannelUpdate" "KMod_Source_Channel";
+		editorTemplate -callCustom "PRTModifiers_DestinationChannel" "PRTModifiers_DestinationChannelUpdate" "KMod_Destination_Channel";
+		editorTemplate -label "Copy as Vector Length" -addControl "KMod_Copy_as_Vector_Length";
+		
+		editorTemplate -label "Fill Radius" -addControl "KMod_Fill_Radius";
+		editorTemplate -label "Fill Radius Subdivs" -addControl "KMod_Fill_Radius_Subdivs";
+		editorTemplate -label "Particles Per Subdiv" -addControl "KMod_Particles_Per_Subdiv";
+		editorTemplate -label "Density Falloff" -addControl "KMod_Density_Falloff";
+		editorTemplate -label "Random Seed" -addControl "KMod_Random_Seed";
+		
+		editorTemplate -callCustom "PRTModifiers_UVWChannel" "PRTModifiers_UVWChannelUpdate" "KMod_UVW_Channel_Name";
+		editorTemplate -label "Texture" -addControl "KMod_Texture";
+
+	editorTemplate -endLayout;
+
+	// To Suppress
+	string $toSuppress[] = { "caching", "nodeState", "inModifiersMethod",
+
+		"KMod_Evaluate_In_Viewport",
+		"KMod_Channel_Name", "KMod_Channel_Value", "KMod_Channel_Scale",
+		"KMod_Source_Channel", "KMod_Destination_Channel", "KMod_Copy_as_Vector_Length", "KMod_Copy_as_Vector_Length",
+		"KMod_Fill_Radius", "KMod_Fill_Radius_Subdivs", "KMod_Particles_Per_Subdiv", "KMod_Density_Falloff", "KMod_Random_Seed", "KMod_Texture",
+		"KMod_Texture", "KMod_UVW_Channel_Name"
+	};
+    
+	// manually supress each such item
+	for ($value in $toSuppress)
+		editorTemplate -suppress $value;
+
+	editorTemplate -addExtraControls;
+	
+	editorTemplate -endScrollLayout;
+}
+
+global proc PRTModifiers_settingsLabel( string $nodeAttr ) {
+	PRTModifiers_settingsLabelUpdate $nodeAttr;
+}
+
+global proc PRTModifiers_settingsLabelUpdate( string $nodeAttr ) {
+	setAttr -lock on $nodeAttr;
+}
+
+global proc PRTModifiers_SourceChannel( string $nodeAttr ) {
+	PRTModifiers_SourceChannelUpdate $nodeAttr;
+}
+
+global proc PRTModifiers_SourceChannelUpdate( string $nodeAttr ) {
+	global int $PRTModifiersSourceChannelChangedJobID;
+	if ( `scriptJob -ex $PRTModifiersSourceChannelChangedJobID` )
+		scriptJob -kill $PRTModifiersSourceChannelChangedJobID;
+		
+	string $spinner = "PRTModifiers_SourceChannel_Spinner";
+	string $layoutName = ($spinner + "_layout");
+	string $fieldName = ($spinner + "_textfield");
+	int $hasAttr = `objExists $nodeAttr`;
+	int $hasGui = `layout -exists $layoutName`;
+	
+	string $buffer[];
+	tokenize $nodeAttr "." $buffer;
+
+	string $choices[];
+	$choices = `MagmaFLUX_getChannelTypes`;
+
+	$PRTModifiersSourceChannelChangedJobID = `PRTModifiers_UpdateChannelSelectionGUI $buffer[0] $buffer[1] $layoutName $spinner $fieldName "Source Selection" "Source Name" $choices`;
+}
+
+global proc PRTModifiers_DestinationChannel( string $nodeAttr ) {
+	PRTModifiers_DestinationChannelUpdate $nodeAttr;
+}
+
+global proc PRTModifiers_DestinationChannelUpdate( string $nodeAttr ) {
+	global int $PRTModifiersDestinationChannelChangedJobID;
+	if ( `scriptJob -ex $PRTModifiersDestinationChannelChangedJobID` )
+		scriptJob -kill $PRTModifiersDestinationChannelChangedJobID;
+
+	string $spinner = "PRTModifiers_DestinationChannel_Spinner";
+	string $layoutName = ($spinner + "_layout");
+	string $fieldName = ($spinner + "_textfield");
+	int $hasAttr = `objExists $nodeAttr`;
+	int $hasGui = `layout -exists $layoutName`;
+	
+	string $buffer[];
+	tokenize $nodeAttr "." $buffer;
+	
+	string $choices[];
+	$choices = `MagmaFLUX_getChannelTypes`;
+
+	$PRTModifiersDestinationChannelChangedJobID = `PRTModifiers_UpdateChannelSelectionGUI $buffer[0] $buffer[1] $layoutName $spinner $fieldName "Destination Selection" "Destination Name" $choices`;
+}
+
+global proc PRTModifiers_Channel( string $nodeAttr ) {
+	PRTModifiers_ChannelUpdate $nodeAttr;
+}
+
+global proc PRTModifiers_ChannelUpdate( string $nodeAttr ) {
+	global int $PRTModifiersChannelChangedJobID;
+	if ( `scriptJob -ex $PRTModifiersChannelChangedJobID` )
+		scriptJob -kill $PRTModifiersChannelChangedJobID;
+
+	string $spinner = "PRTModifiers_Channel_Spinner";
+	string $layoutName = ($spinner + "_layout");
+	string $fieldName = ($spinner + "_textfield");
+	
+	string $buffer[];
+	tokenize $nodeAttr "." $buffer;
+	
+	string $modType = `getAttr ($buffer[0] + ".inModifiersMethod")`;
+	string $choices[];
+	if ( $modType == "Set Vector Channel" || $modType == "Apply Texture" ) {
+		$choices = `PRTModifiers_getChannelsByDataType "Vec3"`;
+	} else if ( $modType == "Set Float Channel" ) {
+		$choices = `PRTModifiers_getChannelsByDataType "Float"`;
+	} else {
+		$choices = `MagmaFLUX_getChannelTypes`;
+	}
+
+	$PRTModifiersChannelChangedJobID = `PRTModifiers_UpdateChannelSelectionGUI $buffer[0] $buffer[1] $layoutName $spinner $fieldName "Channel Selection" "Channel Name" $choices`;
+}
+
+global proc PRTModifiers_UVWChannel( string $nodeAttr ) {
+	PRTModifiers_UVWChannelUpdate $nodeAttr;
+}
+
+global proc PRTModifiers_UVWChannelUpdate( string $nodeAttr ) {
+	global int $PRTModifiersUVWChannelChangedJobID;
+	if ( `scriptJob -ex $PRTModifiersUVWChannelChangedJobID` )
+		scriptJob -kill $PRTModifiersUVWChannelChangedJobID;
+
+	string $spinner = "PRTModifiers_UVWChannel_Spinner";
+	string $layoutName = ($spinner + "_layout");
+	string $fieldName = ($spinner + "_textfield");
+	
+	string $buffer[];
+	tokenize $nodeAttr "." $buffer;
+	
+	string $choices[];
+	$choices = `PRTModifiers_getChannelsByDataType "Vec3"`;
+
+	$PRTModifiersUVWChannelChangedJobID = `PRTModifiers_UpdateChannelSelectionGUI $buffer[0] $buffer[1] $layoutName $spinner $fieldName "UVW Selection" "UVW Name" $choices`;
+}
+
+global proc int PRTModifiers_UpdateChannelSelectionGUI( string $node, string $attr, string $layoutName, string $spinner, string $fieldName, string $selectLabel, string $inputLabel, string $choices[] )
+{
+	int $hasAttr = `objExists ($node + "." + $attr)`;
+	int $hasGui = `layout -exists $layoutName`;
+	int $updateScript = -1;
+
+	if ( $hasAttr ) {
+		if ( $hasGui ) {
+			// Update the scripts and selection choices
+			$updateScript = `PRTModifiers_setupStringEnumAttributeOption $node $attr $spinner $fieldName $choices`;
+		} else /*if (!$hasGui )*/ {
+			// Rebuild the gui
+			$updateScript = `PRTModifiers_addStringEnumAttributeOption $node $attr $layoutName $spinner $fieldName $selectLabel $inputLabel $choices`;
+		}
+	} else {
+		if ($hasGui ) {
+			// Remove the gui
+			deleteUI -layout $layoutName;
+		} else /*if (!$hasGui )*/ {
+			// Nothing needs to be done
+		}
+		$updateScript = -1;
+	}
+
+	return $updateScript;
+}
+
+global proc string[] PRTModifiers_getChannelsByDataType( string $type ) {
+	string $attributeChoices[] = `MagmaFLUX_getChannelTypes`;
+	string $finalChoices[];
+	int $index = 0;
+	int $finalCount = 0;
+	for ( $item in $attributeChoices ) {
+		if ( $finalCount == 0 ) {
+			// Assumes first choice is always <custom channel>
+			$finalChoices[$finalCount] = $item;
+			$finalCount++;
+		} else {
+			string $checkType = `MagmaFLUX_getChannelTypesDataType $index`;
+			if ( $type == $checkType ) {
+				$finalChoices[$finalCount] = $item;
+				$finalCount++;
+			}
+		}
+		$index++;
+	}
+
+	return $finalChoices;
+}
+
+global proc int PRTModifiers_setupStringEnumAttributeOption( string $node, string $attr, string $spinner, string $fieldName, string $choices[] )
+{
+	PRTModifiers_setStringEnumAttributeOption $node $attr $spinner $choices;
+
+	if ( `objExists ($node + "." + $attr)` ) {
+		string $enumCommand = ("setAttr \"" + $node + "." + $attr + "\" -type \"string\" \"#1\";\n");
+	
+		optionMenu -e -cc $enumCommand $spinner;
+
+		string $jobstring = (
+			"int $itemIndex = 1;\n" +
+			"string $spinner = \"" + $spinner + "\";\n" +
+			"string $currentChoice = `getAttr " + ($node + "." + $attr) + "`;\n" +
+
+			"optionMenu -e -select 1 $spinner;\n" +
+			"for( $item in `optionMenu -q -ils $spinner` )\n" +
+			"{\n" +
+				"$itemName = `menuItem -q -label $item $spinner`;\n" +
+				"if ( $itemName == $currentChoice )\n" +
+				"{\n" +
+					"if( `optionMenu -q -select $spinner` != $itemIndex ) {\n" +
+						"optionMenu -e -select $itemIndex $spinner;\n" +
+						"break;\n" +
+					"}\n" +
+				"}\n" +
+				"$itemIndex++;\n" +
+			"}\n"
+		);
+
+		connectControl $fieldName ($node + "." + $attr);
+		
+		int $updateScriptID = `scriptJob -kws -parent $spinner -attributeChange ($node + "." + $attr) ( $jobstring )`;
+		eval $jobstring;
+		return $updateScriptID;
+	} else {
+		optionMenu -e -cc ";" $spinner;
+		return -1;
+	}
+}
+
+global proc PRTModifiers_setStringEnumAttributeOption( string $node, string $attr, string $spinner, string $attributeChoices[] )
+{
+	// Clear the old list
+	string $oldItems[] = `optionMenu -q -ill $spinner`;
+	deleteUI -menuItem $oldItems;
+	
+	// Get the current selection
+	string $currentChoice;
+	if ( `objExists ($node + "." + $attr)` ) {
+		$currentChoice = `getAttr ($node + "." + $attr)`;
+	} else {
+		$currentChoice = $attributeChoices[0];
+	}
+	int $currentChoiceInList = 1;
+
+	// Set up the list
+	int $itemIndex = 1;
+	for( $item in $attributeChoices )
+	{
+		menuItem -label $item -data $itemIndex -p $spinner;
+		if( $item == $currentChoice )
+			$currentChoiceInList = $itemIndex;
+		$itemIndex++;
+	}
+	optionMenu -e -select $currentChoiceInList $spinner;
+}
+
+global proc int PRTModifiers_addStringEnumAttributeOption( string $node, string $attr, string $layoutName, string $spinner, string $fieldName, string $selectLabel, string $inputLabel, string $attributeChoices[] )
+{
+	// Add a combo box for string attribute
+	// Based on MagmaFLUX_addStringEnumAttributeOption
+	string $currentChoice;
+	if ( `objExists ($node + "." + $attr)` ) {
+		$currentChoice = `getAttr ($node + "." + $attr)`;
+	} else {
+		$currentChoice = $attributeChoices[0];
+	}
+	int $currentChoiceInList = 1;
+
+	//Set up the enum choices and combo box
+	columnLayout $layoutName;
+		rowLayout -nc 2 ($layoutName + "_1");
+			text -label $selectLabel ($spinner + "_label_1");
+
+			optionMenu -label "" $spinner;
+			int $itemIndex = 1;
+			for( $item in $attributeChoices )
+			{
+				menuItem -label $item -data $itemIndex;
+				if( $item == $currentChoice )
+					$currentChoiceInList = $itemIndex;
+				$itemIndex++;
+			}
+			optionMenu -e -select $currentChoiceInList $spinner;
+		setParent ..;
+		
+		rowLayout -nc 2 ($layoutName + "_2");
+			text -label $inputLabel ($spinner + "_label_2");
+			textField -text "" $fieldName;
+		setParent ..;
+			
+	setParent ..;
+	
+	int $updateScriptID = `PRTModifiers_setupStringEnumAttributeOption $node $attr $spinner $fieldName $attributeChoices`;
+	return $updateScriptID;
+}

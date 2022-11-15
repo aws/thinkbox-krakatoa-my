@@ -1,0 +1,543 @@
+// Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
+////////////////////////////////////
+// Attribute Editor Template for the PRTLoader Node
+//
+// Written By: Stephen Kiazyk
+// Thinkbox Software Inc.
+// 2012
+///////////////////////////////////
+
+global proc AEPRTLoaderTemplate( string $nodeName )
+{
+	editorTemplate -beginScrollLayout;
+ 
+ 	editorTemplate -beginLayout "Files" -collapse 0;
+		editorTemplate -callCustom "KrakatoaPRTLoaderInitializeFileControls" "KrakatoaPRTLoaderUpdateFileControls" "inInputFiles";
+	editorTemplate -endLayout;
+	
+	editorTemplate -beginLayout "Timing Settings" -collapse 0;
+		editorTemplate -label "Keep Velocity Channel" -addControl "inKeepVelocityChannel";
+		editorTemplate -label "Interpolate Sub-Frames" -addControl "inInterpolateSubFrames";
+		editorTemplate -label "Enable Playback Graph" -addControl "inEnablePlaybackGraph";
+		editorTemplate -label "Playback Graph" -addControl "inPlaybackGraph";
+		editorTemplate -label "Frame Offset" -addControl "inFrameOffset";
+		editorTemplate -label "Use Custom Range" -addControl "inUseCustomRange";
+		editorTemplate -label "Range Start" -addControl "inCustomRangeStart";
+		editorTemplate -label "Range End" -addControl "inCustomRangeEnd";
+		editorTemplate -label "Range Start Mode" -addControl "inCustomRangeStartClampMode";
+		editorTemplate -label "Range End Mode" -addControl "inCustomRangeEndClampMode";
+	editorTemplate -endLayout;
+ 
+	editorTemplate -beginLayout "Render Settings" -collapse 0;
+		editorTemplate -label "Render Load Mode" -addControl "inRenderLoadMode";
+		editorTemplate -label "Enable Particle Limit" -addControl "inEnableRenderParticleLimit";
+		editorTemplate -label "Particle Limit x1000" -addControl "inRenderParticleLimit";
+		editorTemplate -label "Percentage Limit" -addControl "inRenderParticlePercent";
+	editorTemplate -endLayout;
+	
+	editorTemplate -beginLayout "Viewport Settings" -collapse 0;
+		editorTemplate -label "Viewport Display Mode" -addControl "inViewportDisplayMode";
+		editorTemplate -label "Viewport Load Mode" -addControl "inViewportLoadMode";
+		editorTemplate -label "Enable Particle Limit" -addControl "inEnableViewportParticleLimit";
+		editorTemplate -label "Particle Limit x1000" -addControl "inViewportParticleLimit";
+		editorTemplate -label "Percentage Of Render" -addControl "inViewportParticlePercent";
+	editorTemplate -endLayout;
+
+	editorTemplate -beginLayout "Particle Counts" -collapse false;
+		editorTemplate -label "On Disk" -addControl "outNumParticlesOnDisk";
+		editorTemplate -callCustom "NumParticlesInRenderBuild" "NumParticlesInRenderUpdate" "outNumParticlesInRender";
+		editorTemplate -label "In Viewport" -addControl "outNumParticlesInViewport";
+	editorTemplate -endLayout;
+	
+	// Unless an attribute is manually supressed, maya will automatically fill in all remaining attributes at the bottom of the attribute editor panel.
+	// This was generated mostly from a call to `listAttr $nodeName`;
+	string $toSuppress[] = { "message", "caching", "isHistoricallyInteresting", "nodeState", "binMembership", "hyperLayout", "isCollapsed", "blackBox", "borderConnections", "isHierarchicalConnection", "publishedNodeInfo", "publishedNodeInfo.publishedNode", "publishedNodeInfo.isHierarchicalNode", "publishedNodeInfo.publishedNodeType", "rmbCommand", "templateName", "templatePath", "viewName", "iconName", "viewMode", "templateVersion", "uiTreatment", "customTreatment", "creator", "creationDate",
+    "containerType", "boundingBox", "boundingBoxMin", "boundingBoxMinX", "boundingBoxMinY", "boundingBoxMinZ", "boundingBoxMax", "boundingBoxMaxX", "boundingBoxMaxY", "boundingBoxMaxZ", "boundingBoxSize", "boundingBoxSizeX", "boundingBoxSizeY", "boundingBoxSizeZ", "center", "boundingBoxCenterX", "boundingBoxCenterY", "boundingBoxCenterZ", "matrix", "inverseMatrix", "worldMatrix", "worldInverseMatrix", "parentMatrix", "parentInverseMatrix", "visibility", "intermediateObject", "template",
+    "ghosting", "instObjGroups", "instObjGroups.objectGroups", "instObjGroups.objectGroups.objectGrpCompList", "instObjGroups.objectGroups.objectGroupId", "instObjGroups.objectGroups.objectGrpColor", "useObjectColor", "objectColor", "drawOverride", "overrideDisplayType", "overrideLevelOfDetail", "overrideShading", "overrideTexturing", "overridePlayback", "overrideEnabled", "overrideVisibility", "overrideColor", "lodVisibility", "renderInfo", "identification", "layerRenderable",
+    "layerOverrideColor", "renderLayerInfo", "renderLayerInfo.renderLayerId", "renderLayerInfo.renderLayerRenderable", "renderLayerInfo.renderLayerColor", "ghostingControl", "ghostCustomSteps", "ghostPreSteps", "ghostPostSteps", "ghostStepSize", "ghostFrames", "ghostColorPreA", "ghostColorPre", "ghostColorPreR", "ghostColorPreG", "ghostColorPreB", "ghostColorPostA", "ghostColorPost", "ghostColorPostR", "ghostColorPostG", "ghostColorPostB", "ghostRangeStart", "ghostRangeEnd", "ghostDriver",
+    "renderType", "renderVolume", "visibleFraction", "motionBlur", "visibleInReflections", "visibleInRefractions", "castsShadows", "receiveShadows", "maxVisibilitySamplesOverride", "maxVisibilitySamples", "geometryAntialiasingOverride", "antialiasingLevel", "shadingSamplesOverride", "shadingSamples", "maxShadingSamples", "volumeSamplesOverride", "volumeSamples", "depthJitter", "ignoreSelfShadowing", "primaryVisibility", "referenceObject", "compInstObjGroups",
+    "compInstObjGroups.compObjectGroups", "compInstObjGroups.compObjectGroups.compObjectGrpCompList", "compInstObjGroups.compObjectGroups.compObjectGroupId", "tweak", "relativeTweak", "controlPoints", "controlPoints.xValue", "controlPoints.yValue", "controlPoints.zValue", "weights", "tweakLocation", "blindDataNodes", "uvPivot", "uvPivotX", "uvPivotY", "uvSet", "uvSet.uvSetName", "uvSet.uvSetPoints", "uvSet.uvSetPoints.uvSetPointsU", "uvSet.uvSetPoints.uvSetPointsV", "uvSet.uvSetTweakLocation",
+    "currentUVSet", "displayImmediate", "displayColors", "displayColorChannel", "currentColorSet", "colorSet", "colorSet.colorName", "colorSet.clamped", "colorSet.representation", "colorSet.colorSetPoints", "colorSet.colorSetPoints.colorSetPointsR", "colorSet.colorSetPoints.colorSetPointsG", "colorSet.colorSetPoints.colorSetPointsB", "colorSet.colorSetPoints.colorSetPointsA", "ignoreHwShader", "doubleSided", "opposite", "smoothShading", "boundingBoxScale", "boundingBoxScaleX",
+    "boundingBoxScaleY", "boundingBoxScaleZ", "featureDisplacement", "initialSampleRate", "extraSampleRate", "textureThreshold", "normalThreshold", "displayHWEnvironment", "collisionOffsetVelocityIncrement", "collisionOffsetVelocityIncrement.collisionOffsetVelocityIncrement_Position", "collisionOffsetVelocityIncrement.collisionOffsetVelocityIncrement_FloatValue", "collisionOffsetVelocityIncrement.collisionOffsetVelocityIncrement_Interp", "collisionDepthVelocityIncrement",
+    "collisionDepthVelocityIncrement.collisionDepthVelocityIncrement_Position", "collisionDepthVelocityIncrement.collisionDepthVelocityIncrement_FloatValue", "collisionDepthVelocityIncrement.collisionDepthVelocityIncrement_Interp", "collisionOffsetVelocityMultiplier", "collisionOffsetVelocityMultiplier.collisionOffsetVelocityMultiplier_Position", "collisionOffsetVelocityMultiplier.collisionOffsetVelocityMultiplier_FloatValue",
+    "collisionOffsetVelocityMultiplier.collisionOffsetVelocityMultiplier_Interp", "collisionDepthVelocityMultiplier", "collisionDepthVelocityMultiplier.collisionDepthVelocityMultiplier_Position", "collisionDepthVelocityMultiplier.collisionDepthVelocityMultiplier_FloatValue", "collisionDepthVelocityMultiplier.collisionDepthVelocityMultiplier_Interp", "inInputFiles", "inInputFiles.inPRTFile", "inInputFiles.inUseFileInViewport", "inInputFiles.inUseFileInRender", "inInputFiles.inSingleFileOnly",
+    "inTime", "inKeepVelocityChannel", "inInterpolateSubFrames", "inPlaybackGraph", "inEnablePlaybackGraph", "inFrameOffset", "inUseCustomRange", "inCustomRangeStart", "inCustomRangeEnd", "inCustomRangeStartClampMode", "inCustomRangeEndClampMode", "inViewportLoadMode", "inViewportParticleLimit", "inEnableViewportParticleLimit", "inViewportParticlePercent", "inViewportDisplayMode", "inRenderLoadMode", "inRenderParticleLimit", "inEnableRenderParticleLimit", "inRenderParticlePercent",
+    "outSentinel", "outSingleSimpleRenderFile", "outNumParticlesOnDisk", "outNumParticlesInRender", "outNumParticlesInViewport", "inTestControlMode", "inMayaMagma"};
+    
+	// manually supress each such item
+	for ($value in $toSuppress)
+		editorTemplate -suppress $value;
+		
+	editorTemplate -addExtraControls;
+	
+	editorTemplate -endScrollLayout;
+}
+
+global proc MakeReadOnlyIntField (string $attributeName)
+{
+	string $toks[];
+	tokenize($attributeName, ".", $toks);
+	intField ("PRTLoader_Readonly_" + $toks[1]);
+	connectControl ("PRTLoader_Readonly_" + $toks[1]) $attributeName;
+}
+
+global proc UpdateReadOnlyIntField (string $attributeName)
+{
+	string $toks[];
+	tokenize($attributeName, ".", $toks);
+	connectControl ("PRTLoader_Readonly_" + $toks[1]) $attributeName;
+}
+
+// Multi-index attributes are not tightly allocated, so it is possible for there to be 'gaps' in the indices
+// This method will find the smallest indexed available slot in the given attribute
+proc int GetLowestFreeSlot( string $attributeName )
+{
+	int $usedIndices[] = `getAttr -multiIndices $attributeName`;
+	int $current = 0;
+		
+	int $numElem = `size $usedIndices`;
+	int $i = 0;
+		
+	for ($i = 0; $i < $numElem && $current == $usedIndices[$i]; ++$i)
+	{
+		++$current;
+	}
+	
+	return $current;
+}
+
+proc int[] GetPartitionInfo(string $partitionFile)
+{
+	python("import MayaKrakatoa;");
+	return python(("MayaKrakatoa.GetPartitionFileInfo(\"" + $partitionFile + "\");"));
+}
+
+proc int IsPartitionFile(string $fileName)
+{
+	python("import MayaKrakatoa;");
+	return python(("MayaKrakatoa.IsPartitionFile(\"" + $fileName + "\");"));
+}
+
+proc string ReplacePartitionNumber(string $sourceFile, string $partitionId)
+{
+	python("import MayaKrakatoa;");
+	return python(("MayaKrakatoa.ReplacePartitionNumber(\"" + $sourceFile + "\", " + $partitionId + ");"));
+}
+
+proc string WildCardPartitionNumber(string $sourceFile)
+{
+	python("import MayaKrakatoa;");
+	return python(("MayaKrakatoa.WildCardPartitionNumber(\"" + $sourceFile + "\");"));
+}
+
+proc int ShowAskAddParitionsDialog(string $fileName, int $numPartitions)
+{
+	string $message = "The file \"" + $fileName + "\" appears to be part of a sequence of " + $numPartitions + " files.  Do you want to load the other files in this partition now?";
+	string $result = `confirmDialog -title "Load Other Sequence Paritions?" -message $message -button "Yes" -button "No" -defaultButton "Yes" -cancelButton "No" -dismissString "No"`;
+	return ($result == "Yes");
+}
+
+proc int ViewportFileAlreadyExists(string $attributeName)
+{
+	int $usedIndices[] = `getAttr -multiIndices $attributeName`;
+	int $i;
+	for ($i in $usedIndices)
+	{
+		if (`getAttr ($attributeName + "[" + $i + "].inUseFileInViewport")`)
+		{
+			return 1;
+		}
+	}
+
+	return 0;
+}
+
+proc int IsFileAlreadyInLoader(string $attributeName, string $filename)
+{
+	// skip files that already exist
+	int $usedIndices[] = `getAttr -multiIndices $attributeName`;
+	int $i;
+	for ($i in $usedIndices)
+	{
+		string $existingFile = `getAttr ($attributeName + "[" + $i + "].inPRTFile")`;
+		if ($existingFile == $filename)
+		{
+			return 1;
+		}
+	}
+	
+	return 0;
+}
+
+proc int LooksLikeSingleFile(string $fileName)
+{
+	string $partitionFileRegex = "__part[0-9]+of[0-9]+_";
+	string $withoutPart = substitute($partitionFileRegex, $fileName, "");
+	return (match("[0-9]\\.", $withoutPart) == "");
+}
+
+proc int AddParticleFileSequence(string $attributeName, string $filename, int $enableInViewport, int $enableInRender, int $singleFileOnly)
+{
+	if (!IsFileAlreadyInLoader($attributeName, $filename))
+	{
+		int $current = GetLowestFreeSlot($attributeName);
+		// fill out the new file record with the specified file, and the default values
+		setAttr -type "string" ($attributeName + "[" + $current + "].inPRTFile") $filename;
+		setAttr ($attributeName + "[" + $current + "].inUseFileInViewport") $enableInViewport;
+		setAttr ($attributeName + "[" + $current + "].inUseFileInRender") $enableInRender;
+		setAttr ($attributeName + "[" + $current + "].inSingleFileOnly") $singleFileOnly;
+
+		return $current;
+	}
+	return -1;
+}
+
+global proc KrakatoaPRTLoaderAddAllItems(string $attributeName, string $scrollList, string $windowName, string $viewportCheckbox, string $renderCheckbox)
+{
+	string $files[] = `textScrollList -q -ai $scrollList`;
+	int $enableInViewport = `checkBox -q -value $viewportCheckbox`;
+	int $enableInRender	= `checkBox -q -value $renderCheckbox`;
+	
+	int $items[];
+	int $count = 0;
+
+	for ($file in $files)
+	{
+		int $index = AddParticleFileSequence($attributeName, $file, $enableInViewport, $enableInRender, LooksLikeSingleFile($file) );
+		if ( $index >= 0 ) {
+			$items[$count] = $index + 1;
+			$count++;
+		}
+	}
+	deleteUI $windowName;
+	
+	// Selected added files
+	KrakatoaPRTLoaderUpdateFileControls($attributeName);
+	for ( $index in $items )
+		textScrollList -e -sii $index fileList;
+}
+
+
+global proc KrakatoaPRTLoaderAddAllSelectedItems(string $attributeName, string $scrollList, string $windowName, string $viewportCheckbox, string $renderCheckbox)
+{
+	string $files[] = `textScrollList -q -selectItem $scrollList`;
+	int $enableInViewport = `checkBox -q -value $viewportCheckbox`;
+	int $enableInRender	= `checkBox -q -value $renderCheckbox`;
+	
+	int $items[];
+	int $count = 0;
+	
+	string $file;
+	for ($file in $files)
+	{
+		int $index = AddParticleFileSequence($attributeName, $file, $enableInViewport, $enableInRender, LooksLikeSingleFile($file) );
+		if ( $index >= 0 ) {
+			$items[$count] = $index + 1;
+			$count++;
+		}
+	}
+	deleteUI $windowName;
+
+	// Selected added files
+	KrakatoaPRTLoaderUpdateFileControls($attributeName);
+	for ( $index in $items )
+		textScrollList -e -sii $index fileList;
+}
+
+global proc KrakatoaPRTLoaderAddPartitionFilesToList(string $fileName, int $numPartitions, string $scrollList, string $checkBox)
+{
+	textScrollList -e -removeAll $scrollList;
+	int $existingOnly = `checkBox -q -value $checkBox`;
+	
+	if ($existingOnly)
+	{
+		string $fileSearch = WildCardPartitionNumber($fileName);
+		
+		string $files[] = `getFileList -filespec $fileSearch`;
+		string $file;
+		for ($file in $files)
+		{
+			$file = dirname($fileName) + "/" + $file;
+			if ($file != $fileName)
+			{
+				textScrollList -e -append $file $scrollList;
+			}
+		}
+	}
+	else
+	{
+		int $i;
+		for ($i = 1; $i <= $numPartitions; ++$i)
+		{
+			string $partitionName = ReplacePartitionNumber($fileName, $i);
+			
+			if ($partitionName != $fileName)
+			{
+				textScrollList -e -append $partitionName $scrollList;
+			}
+		}
+	}
+}
+
+proc ShowAddParitionsDialog(string $fileName, int $currentPartition, int $numPartitions, string $attributeName)
+{
+	string $windowName = `window -title "Select Other Partitions" -width 600`;
+	columnLayout -adjustableColumn true;
+		
+		string $onlyExistingCheckbox = `checkBox -label "Only existing files" -value false`;
+	
+		string $scrollList = `textScrollList -numberOfRows 20 -allowMultiSelection true`;
+		
+		checkBox -e -cc ("KrakatoaPRTLoaderAddPartitionFilesToList(\"" + $fileName + "\", " + $numPartitions + ", \"" + $scrollList + "\", \"" + $onlyExistingCheckbox + "\")") $onlyExistingCheckbox;
+		
+		KrakatoaPRTLoaderAddPartitionFilesToList($fileName, $numPartitions, $scrollList, $onlyExistingCheckbox);
+	
+		gridLayout -numberOfColumns 2 -cellWidthHeight 200 20;
+			string $viewportCheckbox = `checkBox -label "Enable in Viewport" -value false`;
+			string $renderCheckbox = `checkBox -label "Enable in Render" -value true`;
+		setParent ..;
+		
+		gridLayout -numberOfColumns 3 -cellWidthHeight 200 20;
+			button -label "Add Selected Sequences" -command ("KrakatoaPRTLoaderAddAllSelectedItems(\"" + $attributeName + "\", \"" + $scrollList + "\", \"" + $windowName + "\", \"" + $viewportCheckbox + "\", \"" + $renderCheckbox + "\")");
+			button -label "Add All Sequences" -command ("KrakatoaPRTLoaderAddAllItems(\"" + $attributeName + "\", \"" + $scrollList + "\", \"" + $windowName + "\", \"" + $viewportCheckbox + "\", \"" + $renderCheckbox + "\")");
+			button -label "Cancel" -command ("deleteUI \"" + $windowName + "\"");
+		setParent ..;
+		
+	setParent ..;
+	
+	showWindow;
+}
+
+global proc KrakatoaPRTLoaderAddNewFileSequence(string $attributeName)
+{
+	python ("import MayaKrakatoa;");
+	
+	// fileMode 4 is to select multiple, existing files.
+	string $results[] = `fileDialog2 -caption "Open Particle Files..." -okCaption "Open" -fileFilter "All Particle Files (.prt .bin .rpc .las .pts .ptx .xyz .csv) (*.prt *.bin *.rpc *.las *.pts *.ptx *.xyz *.csv);;Krakatoa files (.prt) (*.prt);;RealFlow files (.bin .rpc) (*.bin *.rpc);;LASer files (.las) (*.las);;Leica files (.pts .ptx) (*.pts *.ptx);;Comma-Separated Value ASCII files (.xyz .csv) (*.xyz *.csv);; All Files (*.*)" -fileMode 4`;
+	
+	int $items[];
+	int $count = 0;
+
+	for ($filename in $results)
+	{
+		$filename = fromNativePath($filename);
+
+		if (IsPartitionFile($filename))
+		{
+			int $partitionInfo[] = GetPartitionInfo($filename);
+			int $currentParition = $partitionInfo[0];
+			int $numPartitions = $partitionInfo[1];
+			
+			int $selectOtherParititions = ShowAskAddParitionsDialog($filename, $numPartitions);
+			
+			if ($selectOtherParititions)
+			{
+				ShowAddParitionsDialog($filename, $currentParition, $numPartitions, $attributeName);
+			}
+		}
+
+		$index = AddParticleFileSequence($attributeName, $filename, !ViewportFileAlreadyExists($attributeName), 1, LooksLikeSingleFile($filename));
+		if ( $index >= 0 ) {
+			$items[$count] = $index + 1;
+			$count++;
+		}
+	}
+	
+	//UpdateScrollList($attributeName);
+	KrakatoaPRTLoaderUpdateFileControls($attributeName);
+
+	// Selected added files
+	for ( $index in $items )
+		textScrollList -e -sii $index fileList;
+}
+
+global proc KrakatoaPRTLoaderInitializeFileControls( string $attributeName )
+{
+	setUITemplate -pst attributeEditorTemplate;
+	rowLayout -nc 3 -columnWidth3 145 140 140;
+	checkBox -l "Single File Only" singleFileCheckBox;
+	checkBox -l "Enable in Viewport" inViewportCheckBox;
+	checkBox -l "Enable in Render" inRenderCheckBox;
+	setParent ..;
+	setUITemplate -ppt;
+	
+	textScrollList -allowMultiSelection true fileList;
+	
+	setUITemplate -pst attributeEditorTemplate;
+	rowLayout -nc 2 -columnWidth2 150 150;
+	button -label "Load PRT File..." -w 150 loadPRTBtn;
+	button -label "Remove Selected PRT Files " -w 150 removePRTBtn;	
+	setParent ..;
+	setUITemplate -ppt;
+	
+	KrakatoaPRTLoaderUpdateFileControls($attributeName);
+}
+
+global proc KrakatoaPRTLoaderUpdateFileControls( string $attributeName )
+{
+	print "UPDATE\n";
+	string $selections[] = `textScrollList -q -si fileList`;
+	
+	//Strips the option indicators off the front of the string when reading from the list
+	int $INDICATOR_STR_LEN = 5;
+	int $selectionNum;
+	for ($selectionNum = 0; $selectionNum < size($selections); $selectionNum++)
+	{
+		string $currSelection = $selections[$selectionNum];
+		$selections[$selectionNum] = `substring $currSelection ($INDICATOR_STR_LEN + 1) (size($currSelection))`;
+	}
+	
+	textScrollList -e -ra "fileList";
+	
+	int $usedIndices[] = `getAttr -multiIndices $attributeName`;
+	string $attrsInList[];
+	string $currAttr;
+	int $indexCount = 1;
+	
+	for ($index in $usedIndices)
+	{
+		$currAttr = $attributeName + "[" + $index + "]";
+		$attrsInList[$indexCount] = $currAttr;
+		
+		string $file = `getAttr ($currAttr + ".inPRTFile")`;
+		int $inRender = `getAttr ($currAttr + ".inUseFileInRender")`;
+		int $inViewport = `getAttr ($currAttr + ".inUseFileInViewport")`;
+		int $singleFileOnly = `getAttr ($currAttr + ".inSingleFileOnly")`;
+		
+		string $viewportIndicator = $inViewport ? "v" : "_";
+		string $renderIndicator = $inRender ? "r" : "_";
+		string $singleFileIndicator = $singleFileOnly ? "s" : "_";
+		string $dispFile = $singleFileIndicator + $viewportIndicator + $renderIndicator + ": " + $file;
+		
+		textScrollList -e -append $dispFile fileList;
+		
+		int $selected = stringArrayContains($file, $selections);
+		if($selected)
+		{
+			textScrollList -e -si $dispFile fileList;
+		}
+		$indexCount++;
+	}
+	
+	string $attrArrayAsString = (size($attrsInList) > 0) ? "{\"" + `stringArrayToString $attrsInList "\",\" "` + "\"}" : "{}";
+	
+	SelectFileCB($attributeName, $attrsInList);
+
+	button -e -c ("KrakatoaPRTLoaderAddNewFileSequence " + $attributeName) loadPRTBtn;
+	textScrollList -e -sc ("SelectFileCB " + "\"" + $attributeName + "\" " + $attrArrayAsString) fileList;
+}
+
+//--- UI callbacks ---//
+
+global proc RemovePRTFilesCB(string $attributeName, string $selectedAttrs[])
+{
+	for($attr in $selectedAttrs)
+	{
+		removeMultiInstance ($attr);	
+	}
+	
+	string $selectedItems[] = `textScrollList -q -si fileList`;
+	
+	for($selectedItem in $selectedItems)
+	{
+		textScrollList -e -ri $selectedItem fileList;
+	}
+	
+	KrakatoaPRTLoaderUpdateFileControls($attributeName );
+}
+
+global proc SelectFileCB(string $attributeName, string $attrsInList[])
+{	
+	int $singleFileOn = true;
+	int $inViewportOn = true;
+	int $inRenderOn = true;
+	
+	int $selectedIndices[] = `textScrollList -q -sii fileList`;
+	string $selectedAttrs[];
+	string $currAttr;
+	int $attrCount = 0;
+	
+	for ($index in $selectedIndices)
+	{
+		$currAttr = $attrsInList[$index];
+		$selectedAttrs[$attrCount] =  $currAttr;
+		
+		int $viewport = getAttr ($currAttr + ".inUseFileInViewport");
+		int $render = getAttr ($currAttr + ".inUseFileInRender");
+		int $singleFileOnly = getAttr ($currAttr + ".inSingleFileOnly");
+		
+		$singleFileOn = $singleFileOnly ? $singleFileOn : false;
+		$inViewportOn = $viewport ? $inViewportOn : false;
+		$inRenderOn = $render ? $inRenderOn : false;
+		
+		$attrCount = $attrCount + 1;
+	 }
+	 
+	 if (size($selectedIndices) == 0)
+	 {
+		$singleFileOn = false;
+		$inViewportOn = false;
+		$inRenderOn = false;
+	 }
+	 
+	string $attrArrayAsString = (size($selectedIndices) > 0 ) ? "{\"" + `stringArrayToString $selectedAttrs "\",\" "` + "\"}" : "{}";
+
+	print ($attrArrayAsString + "\n");
+	
+	checkBox -e -v $singleFileOn -cc ("EnableSingleFileOnlyChangedCB " + "\"" + $attributeName + "\" " + $attrArrayAsString) singleFileCheckBox;
+	checkBox -e -v $inViewportOn -cc ("EnableInViewportChangedCB " + "\"" + $attributeName + "\" " + $attrArrayAsString) inViewportCheckBox;
+	checkBox -e -v $inRenderOn -cc ("EnableInRenderChangedCB " + "\"" + $attributeName + "\" " + $attrArrayAsString) inRenderCheckBox;
+	
+	button -e -c ("RemovePRTFilesCB " + "\"" + $attributeName + "\" " + $attrArrayAsString) removePRTBtn;
+}
+
+global proc EnableInViewportChangedCB(string $attributeName, string $selectedAttrs[])
+{
+	int $enabled = `checkBox -q -v inViewportCheckBox`;
+	
+	for ($attr in $selectedAttrs)
+	{
+		setAttr ($attr + ".inUseFileInViewport") $enabled;
+	}
+	KrakatoaPRTLoaderUpdateFileControls( $attributeName );
+}
+
+global proc EnableInRenderChangedCB(string $attributeName, string $selectedAttrs[])
+{
+	int $enabled = `checkBox -q -v inRenderCheckBox`;
+
+	for ($attr in $selectedAttrs)
+	{
+		setAttr ($attr + ".inUseFileInRender") $enabled;
+	}
+	KrakatoaPRTLoaderUpdateFileControls( $attributeName );
+}
+
+global proc EnableSingleFileOnlyChangedCB(string $attributeName, string $selectedAttrs[])
+{
+	int $enabled = `checkBox -q -v singleFileCheckBox`;
+	
+	for ($attr in $selectedAttrs)
+	{
+		setAttr ($attr + ".inSingleFileOnly") $enabled;
+	}
+	KrakatoaPRTLoaderUpdateFileControls( $attributeName );
+}
+
+global proc NumParticlesInRenderBuild(string $attributeName)
+{
+	rowLayout -nc 2 -columnWidth2 144 70;
+	text -l "In Render";
+	textField -backgroundColor 0.3594 0.4063 0.4531 -editable false numParticlesInRenderTextField;
+	setParent ..;
+
+	NumParticlesInRenderUpdate($attributeName);
+}
+
+global proc NumParticlesInRenderUpdate(string $attributeName)
+{
+	string $attribute = `getAttr $attributeName`;
+
+	textField -e -text $attribute numParticlesInRenderTextField;
+}

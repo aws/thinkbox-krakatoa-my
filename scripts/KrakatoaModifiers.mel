@@ -1,0 +1,695 @@
+// Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
+
+// Krakatoa MY: List of functions for adding modifiers to particle objects.
+//
+
+//
+//
+// Public functions: Modifiers functions
+//
+//
+
+proc addChannelNameAttribute( string $attriName, string $particleObj, string $defaultChoice ) {
+	addAttr -longName ($attriName) -dt "string" $particleObj;
+	setAttr -type "string" ($particleObj + "." + $attriName) $defaultChoice;
+}
+
+//
+//
+// Gets all the connections to $node's outParticleStream attribute and filters them
+// to exclude connections to PRTMagma and PRTModifier nodes
+//
+//
+
+proc string[] getExternalConnections( string $node )
+{
+   string $connections[] = `connectionInfo -destinationFromSource ( $node + ".outParticleStream" )`;
+   string $connection;
+   string $result[];
+
+   for( $connection in $connections ) {
+	   string $externalAttributeExpanded[];
+	   tokenize $connection "." $externalAttributeExpanded;
+	   string $externalType = `nodeType $externalAttributeExpanded[0]`;
+	   if( $externalType != "PRTMagma" && $externalType != "PRTModifier" ) {
+		   $result[ size( $result ) ] = $connection;
+	   }
+   }
+
+   return $result;
+}
+
+//
+//
+// Moves all connections to $sourceNode's outParticleStream (excluding those to PRTMagma and PRTModifier) to $destNode's outParticleStream
+//
+//
+
+proc moveExternalConnections( string $sourceNode, string $destNode )
+{
+   if( $sourceNode != $destNode ) {
+	   string $connections[] = getExternalConnections( $sourceNode );
+	   string $connection;
+	   for( $connection in $connections ) {
+		   disconnectAttr ( $sourceNode + ".outParticleStream" ) $connection;
+		   connectAttr( $destNode + ".outParticleStream" ) $connection;
+	   }
+   }
+}
+
+global proc KMYMOD_moveExternalConnectionsToEnd( string $node )
+{
+   string $lastNode = MKYMOD_getLastModifier( $node );
+   moveExternalConnections( $node, $lastNode );
+}
+
+global proc KMYMOD_moveExternalConnectionsToPrevious( string $node )
+{
+   string $previousNode = KMYMOD_getPreviousStreamModifier( $node, false );
+
+   if( $previousNode != "" ) {
+	   moveExternalConnections( $node, $previousNode );
+   }
+}
+
+//
+//
+// Calls to add new modifiers
+//
+//
+
+global proc string KMYMOD_addStreamModifier( string $type, string $name, string $last )
+{
+	string $newItem = "";
+	if ( $last != "" ) {
+		if ( $name == "" )
+			$newItem = `createNode -ss $type`;
+		else
+			$newItem = `createNode -ss -n ($name + "1") $type`;
+		connectAttr ($last + "." + "outParticleStream") ($newItem + "." + "inParticleStream");
+		
+		KMYMOD_moveExternalConnectionsToEnd( $last );
+	}
+	return $newItem;
+}
+
+global proc KMYMOD_initializeStreamModifier( string $newNode ) {
+	KMYMOD_addModifierCallback $newNode;
+	KMY_forceObjectReevaluate( $newNode );
+	if( `window -exists KMYModEditorWindow` == true)
+		KMYMODED_updateModifiersList();
+
+}
+
+global proc string KMYMOD_addMagmaMod( string $objectToConnectTo )
+{
+	string $newNode = KMYMOD_addStreamModifier( "PRTMagma", "", $objectToConnectTo );
+	if ( $newNode != "" ) {
+		KMYMOD_initializeStreamModifier( $newNode );
+	}
+	return $newNode;
+}
+
+global proc string KMYMOD_addApplyTextureMod( string $objectToConnectTo )
+{
+	string $newNode = KMYMOD_addStreamModifier( "PRTModifier", "PRTApplyTexture", $objectToConnectTo );
+	if ( $newNode != "" ) {
+		KMYMOD_SetMethod_ApplyTextureModifier( $newNode );
+		KMYMOD_initializeStreamModifier( $newNode );
+	}
+	return $newNode;
+}
+
+global proc string KMYMOD_addSetFloat3ChannelMod( string $objectToConnectTo )
+{
+	string $newNode = KMYMOD_addStreamModifier( "PRTModifier", "PRTSetVector", $objectToConnectTo );
+	if ( $newNode != "" ) {
+		KMYMOD_SetMethod_SetFloat3ChannelModifier( $newNode );
+		KMYMOD_initializeStreamModifier( $newNode );
+	}
+	return $newNode;
+}
+
+global proc string KMYMOD_addSetFloatChannelMod( string $objectToConnectTo )
+{
+	string $newNode = KMYMOD_addStreamModifier( "PRTModifier", "PRTSetFloat", $objectToConnectTo );
+	if ( $newNode != "" ) {
+		KMYMOD_SetMethod_SetFloatChannelModifier( $newNode );
+		KMYMOD_initializeStreamModifier( $newNode );
+	}
+	return $newNode;
+}
+
+global proc string KMYMOD_addScaleChannelMod( string $objectToConnectTo )
+{
+	string $newNode = KMYMOD_addStreamModifier( "PRTModifier", "PRTScale", $objectToConnectTo );
+	if ( $newNode != "" ) {
+		KMYMOD_SetMethod_ScaleChannelModifier( $newNode );
+		KMYMOD_initializeStreamModifier( $newNode );
+	}
+	return $newNode;
+}
+
+global proc string KMYMOD_addCopyChannelMod( string $objectToConnectTo )
+{
+	string $newNode = KMYMOD_addStreamModifier( "PRTModifier", "PRTCopy", $objectToConnectTo );
+	if ( $newNode != "" ) {
+		KMYMOD_SetMethod_ChannelCopyModifier( $newNode );
+		KMYMOD_initializeStreamModifier( $newNode );
+	}
+	return $newNode;
+}
+
+global proc string KMYMOD_addRepopulationParticlesMod( string $objectToConnectTo )
+{
+	string $newNode = KMYMOD_addStreamModifier( "PRTModifier", "PRTRepopulate", $objectToConnectTo );
+	if ( $newNode != "" ) {
+		KMYMOD_SetMethod_ParticleRepopulateModifier( $newNode );
+		KMYMOD_initializeStreamModifier( $newNode );
+	}
+	return $newNode;
+}
+
+//
+//
+// Setting the generic modifiers to be a specific one
+//
+//
+
+global proc KMYMOD_SetMethod_ApplyTextureModifier( string $particleObj ) {
+	KMYMOD_deleteModifier $particleObj;
+
+	string $prefixStr = "KMod" + "_";
+
+	//add the attributes
+	addAttr -longName ($prefixStr + "Evaluate_In_Viewport") -at bool $particleObj;
+	addChannelNameAttribute ($prefixStr + "Channel_Name") $particleObj "Color";
+	addAttr -longName ($prefixStr + "Texture") -at float3 -usedAsColor $particleObj;
+	addAttr -longName ($prefixStr + "Texture_R") -at "float" -parent ($prefixStr + "Texture") $particleObj;
+	addAttr -longName ($prefixStr + "Texture_G") -at "float" -parent ($prefixStr + "Texture") $particleObj;
+	addAttr -longName ($prefixStr + "Texture_B") -at "float" -parent ($prefixStr + "Texture") $particleObj;
+	addChannelNameAttribute ($prefixStr + "UVW_Channel_Name") $particleObj "Position";
+	
+	//set defaults
+	setAttr ($particleObj + "." + "inModifiersName")						-type "string" "Apply Texture";
+	setAttr ($particleObj + "." + $prefixStr + "Evaluate_In_Viewport")		true;
+	setAttr ($particleObj + "." + $prefixStr + "Texture")					-type double3 1 1 1;
+	
+	setAttr -type "string" ($particleObj + "." + "inModifiersMethod") "Apply Texture";
+}
+
+global proc KMYMOD_SetMethod_SetFloat3ChannelModifier( string $particleObj ) {
+	KMYMOD_deleteModifier $particleObj;
+
+	string $prefixStr = "KMod" + "_";
+
+	//add the attributes
+	addChannelNameAttribute ($prefixStr + "Channel_Name") $particleObj "Color";
+	addAttr -longName ($prefixStr + "Channel_Value") -at float3 $particleObj;
+	addAttr -longName ($prefixStr + "Channel_Value_R") -at "float" -parent ($prefixStr + "Channel_Value") $particleObj;
+	addAttr -longName ($prefixStr + "Channel_Value_G") -at "float" -parent ($prefixStr + "Channel_Value") $particleObj;
+	addAttr -longName ($prefixStr + "Channel_Value_B") -at "float" -parent ($prefixStr + "Channel_Value") $particleObj;
+	
+	//set defaults
+	setAttr ($particleObj + "." + "inModifiersName")						-type "string" "Set Vector Channel";
+	setAttr ($particleObj + "." + $prefixStr + "Channel_Value")				-type double3 1 1 1;
+	
+	setAttr -type "string" ($particleObj + "." + "inModifiersMethod") "Set Vector Channel";
+}
+
+global proc KMYMOD_SetMethod_SetFloatChannelModifier( string $particleObj ) {
+	KMYMOD_deleteModifier $particleObj;
+
+	string $prefixStr = "KMod" + "_";
+
+	//add the attributes
+	addChannelNameAttribute ($prefixStr + "Channel_Name") $particleObj "Density";
+	addAttr -longName ($prefixStr + "Channel_Value") -at "float" $particleObj;
+
+	//set defaults
+	setAttr ($particleObj + "." + "inModifiersName")						-type "string" "Set Float Channel";
+	setAttr ($particleObj + "." + $prefixStr + "Channel_Value")				1;
+
+	setAttr -type "string" ($particleObj + "." + "inModifiersMethod") "Set Float Channel";
+}
+
+global proc KMYMOD_SetMethod_ScaleChannelModifier( string $particleObj ) {
+	KMYMOD_deleteModifier $particleObj;
+
+	string $prefixStr = "KMod" + "_";
+
+	//add the attributes
+	addChannelNameAttribute ($prefixStr + "Channel_Name") $particleObj "Color";
+	addAttr -longName ($prefixStr + "Channel_Scale") -at "float" $particleObj;
+
+	//set defaults
+	setAttr ($particleObj + "." + "inModifiersName")						-type "string" "Scale Channel";
+	setAttr ($particleObj + "." + $prefixStr + "Channel_Scale")				1;
+	
+	setAttr -type "string" ($particleObj + "." + "inModifiersMethod") "Scale Channel";
+}
+
+global proc KMYMOD_SetMethod_ChannelCopyModifier( string $particleObj ) {
+	KMYMOD_deleteModifier $particleObj;
+
+	string $prefixStr = "KMod" + "_";
+
+	//add the attributes
+	addChannelNameAttribute ($prefixStr + "Source_Channel") $particleObj "Color";
+	addChannelNameAttribute ($prefixStr + "Destination_Channel") $particleObj "Emission";
+	addAttr -longName ($prefixStr + "Copy_as_Vector_Length") -at bool $particleObj;
+
+	//set defaults
+	setAttr ($particleObj + "." + "inModifiersName")						-type "string" "Copy Channel";
+	setAttr ($particleObj + "." + $prefixStr + "Copy_as_Vector_Length")		false;
+	
+	setAttr -type "string" ($particleObj + "." + "inModifiersMethod") "Copy Channel";
+}
+
+global proc KMYMOD_SetMethod_ParticleRepopulateModifier( string $particleObj ) {
+	KMYMOD_deleteModifier $particleObj;
+
+	string $prefixStr = "KMod" + "_";
+	
+	//add the attributes
+	addAttr -longName ($prefixStr + "Evaluate_In_Viewport") -at bool $particleObj;
+	addAttr -longName ($prefixStr + "Fill_Radius") -at "float" -min 0.0001 -max 1000 -smn 0.001 -smx 10 $particleObj;
+	addAttr -longName ($prefixStr + "Fill_Radius_Subdivs") -at long -min 1 -max 16 -smn 1 -smx 4 $particleObj;
+	addAttr -longName ($prefixStr + "Particles_Per_Subdiv") -at long -min 1 -smn 1 -smx 100 $particleObj;
+	addAttr -longName ($prefixStr + "Density_Falloff") -at "float" -min 0.0 -max 1.0 $particleObj;
+	addAttr -longName ($prefixStr + "Random_Seed") -at long $particleObj;
+	//TODO: an attribute for "float densityFalloffStart" ?
+	
+	//set defaults. are these good defaults?
+	setAttr ($particleObj + "." + "inModifiersName")						-type "string" "Repopulate Particles";
+	setAttr ($particleObj + "." + $prefixStr + "Evaluate_In_Viewport")		false;
+	setAttr ($particleObj + "." + $prefixStr + "Fill_Radius")				0.1;
+	setAttr ($particleObj + "." + $prefixStr + "Fill_Radius_Subdivs")		1;
+	setAttr ($particleObj + "." + $prefixStr + "Particles_Per_Subdiv")		2;
+	setAttr ($particleObj + "." + $prefixStr + "Density_Falloff")			0.1;
+	setAttr ($particleObj + "." + $prefixStr + "Random_Seed")               42;
+
+	setAttr -type "string" ($particleObj + "." + "inModifiersMethod") "Repopulate Particles";
+}
+
+global proc KMYMOD_deleteModifier( string $particleObj ) {
+	string $krakMods[] = KMYMOD_getAllModifierAttributes( $particleObj );
+	for( $attr in $krakMods ) {
+		$fullAttr = ( $particleObj + "." + $attr );
+		deleteAttr $fullAttr;
+	}
+
+	setAttr -type "string" ($particleObj + "." + "inModifiersMethod") "None";
+}
+
+//
+//
+// Functions that deal with callbacks for updating the viewport
+//
+//
+global proc KMYMOD_attributeCallback( string $particleObj, string $attr ) {
+	KMY_forceObjectReevaluate( $particleObj );
+	//update the modifier UI window if it exists
+	if( `window -exists KMYModEditorWindow` == true)
+		KMYMODED_updateModifiersList();
+}
+
+global proc KMYMOD_addAttributeCallback( string $particleObj, string $attr ) {
+	scriptJob -kws -ac ($particleObj + "." + $attr) ("KMYMOD_attributeCallback " + $particleObj + " "  + $attr);
+}
+
+global proc KMYMOD_addModifierCallback( string $particleObj ) {
+	string $modifierAttrs[] = KMYMOD_getAllModifierAttributes( $particleObj );
+	for( $attr in $modifierAttrs )
+		KMYMOD_addAttributeCallback( $particleObj, $attr );
+	string $type = `nodeType $particleObj`;
+
+	if ( $type == "PRTModifier" ) {
+		KMYMOD_addAttributeCallback( $particleObj, "inModifiersName" );
+		KMYMOD_addAttributeCallback( $particleObj, "inEnabled" );
+	} else if ( $type == "PRTMagma" ) {
+		KMYMOD_addAttributeCallback( $particleObj, "inEnabled" );
+	}
+}
+
+global proc KMYMOD_addModifierCallbackForAllSceneItems() {
+	string $allParticleObjects[];
+	if( `getApplicationVersionAsFloat` > 2011 ) {
+		$allParticleObjects = `ls -v -typ "PRTModifier" -typ "PRTMagma"`;
+	} else {
+		$allParticleObjects = `ls -v -typ "PRTModifier"`;
+	}
+	for( $particleObj in $allParticleObjects ) {
+		KMYMOD_addModifierCallback( $particleObj );
+	}
+}
+
+//
+//
+// Utility functions
+//
+//
+
+global proc string[] KMYMOD_getAllModifierAttributes( string $particleObj ) {
+	string $modifierAttrs[] = {};
+	string $attrList[] = eval ("attributeInfo -l false " + $particleObj);
+	for( $attr in $attrList ) {
+		$prefixStr = match( "^KMod_", $attr );
+		if( $prefixStr != "" ) {
+			$modifierAttrs[size($modifierAttrs)] = $attr;
+		}
+	}
+	return $modifierAttrs;
+}
+
+global proc string KMYMOD_getNextStreamModifier ( string $current )
+{
+	string $currentOutStream = ( $current + "." + "outParticleStream" );
+	
+	string $list[] = `listConnections -p true -s false -d true $currentOutStream`;
+	
+	//loop through connections.
+	//values for $potentialNext look like this: "PRTMagma1.inParticleStream" etc.
+	for ( $potentialNext in $list ) {
+		if ( $potentialNext != "" ) {
+		
+			//we only allow a few node types here. so filter them. do we need to do this?
+			string $theNodeType = `nodeType $potentialNext`;
+			if( $theNodeType == "PRTMagma" || $theNodeType == "PRTModifier" || $theNodeType == "PRTObject" ) {
+
+				//grab the node name out of the "NodeName.ConnectionName" pair
+				string $entry[];
+				tokenize $potentialNext "." $entry;
+				return $entry[0];
+			}
+		}
+	}
+
+	return "";
+}
+
+global proc string KMYMOD_getPreviousStreamModifier ( string $current, int $ignoreFirst )
+{
+	string $currentInStream = ( $current + "." + "inParticleStream" );
+	string $list[] = `listConnections -p true -s true -d false $currentInStream`;
+	if ( `size $list` > 0 && `size $list[0]` > 0 ) {
+		string $entry[];
+		tokenize $list[0] "." $entry;
+
+		// First item is an actual particle source which acts as a "dummy node" in the list
+		// Check if we passed it
+		if ( $ignoreFirst ) {
+			string $type = `nodeType $entry[0]`;
+			if ( $type == "PRTModifier" || $type == "PRTMagma" )
+				return $entry[0];
+		} else {
+			return $entry[0];
+		}
+	}
+	return "";
+}
+
+global proc int KMYMOD_getModifierIndex ( string $prtmod )
+{
+	//Not used?
+	int $counter = 0;
+	string $prev = `KMYMOD_getPreviousStreamModifier $prtmod true`;
+	while ( $prev != "" ) {
+		$counter++;
+		$prev = `KMYMOD_getPreviousStreamModifier $prev true`;
+	}
+	return $counter;
+}
+
+global proc KMYMOD_insertStreamModifier ( string $element, string $position, int $dir ) // $dir = -1 for before, $dir = 1 for after
+{
+	if ( $dir < 0 ) {
+		string $prev = `KMYMOD_getPreviousStreamModifier $position false`;
+		disconnectAttr ( $prev + "." + "outParticleStream" ) ( $position + "." + "inParticleStream" );
+		connectAttr ( $prev + "." + "outParticleStream" ) ( $element + "." + "inParticleStream" );
+		connectAttr ( $element + "." + "outParticleStream" ) ( $position + "." + "inParticleStream" );
+	}
+	else if ( $dir > 0 ) {
+		string $next = `KMYMOD_getNextStreamModifier $position`;
+		if ( $next != "" ) {
+			disconnectAttr ( $position + "." + "outParticleStream" ) ( $next + "." + "inParticleStream" );
+			connectAttr ( $element + "." + "outParticleStream" ) ( $next + "." + "inParticleStream" );
+		}
+		connectAttr ( $position + "." + "outParticleStream" ) ( $element + "." + "inParticleStream" );
+		
+		KMYMOD_moveExternalConnectionsToEnd( $position );
+	}
+}
+
+global proc KMYMOD_removeStreamModifier ( string $current, int $delete )
+{
+	string $prev = `KMYMOD_getPreviousStreamModifier $current false`;
+	string $next = `KMYMOD_getNextStreamModifier $current`;
+	
+	if( $next == "" ) {
+ 		KMYMOD_moveExternalConnectionsToPrevious( $current );
+ 	}
+	
+	disconnectAttr ( $prev + "." + "outParticleStream" ) ( $current + "." + "inParticleStream" );
+	if ( $next != "" ) {
+		disconnectAttr ( $current + "." + "outParticleStream" ) ( $next + "." + "inParticleStream" );
+		connectAttr ( $prev + "." + "outParticleStream" ) ( $next + "." + "inParticleStream" );
+	}
+
+	if ( $delete ) {
+		delete $current; 
+	}
+}
+
+global proc string MKYMOD_getLastModifier( string $current )
+{
+	string $next = `KMYMOD_getNextStreamModifier $current`;
+	while( $next != "" ) {
+		$current = $next;
+		$next = `KMYMOD_getNextStreamModifier $current`;
+	}
+	return $current;
+}
+
+/////////////////////////////////////////////////////
+// MIGRATION CODE FROM THE OLD MODIFIER SYSTEM
+// Added November 2013. For migrating saved scenes from builds before KMY 2.3 into KMY 2.3.
+// This code can be removed eventually
+/////////////////////////////////////////////////////
+
+global proc string[] KMYMOD_Migration_getChannelTypes()
+{
+	//allowed channelName
+	return { "Color", "Velocity", "Absorption", "Emission", "Density", "Position", "Normal", "Tangent", "Eccentricity", "SpecularPower", "SpecularLevel", "DiffuseLevel", "CustomUserChannel" };
+}
+
+//KMY 2.3 Migration function. To be removed eventually.
+global proc PRTMOD_Migration_duplicateAtribute( string $sourceParticleObj, string $sourceAttr, string $destParticleObj, string $destAttr ) {
+	//this function clones an attribute
+	//it only supports: string, long, bool, float, float3. more can be added if needed.
+	//this function keeps any existing animations and texture connections in tact.
+	
+	string $attrType = `getAttr -type ($sourceParticleObj+"."+$sourceAttr)`;
+
+	if( $attrType == "string" ) {
+		addAttr -longName $destAttr -dt "string" $destParticleObj;
+	} else if( $attrType == "long" ) {
+		addAttr -longName $destAttr -at long $destParticleObj;
+	} else if( $attrType == "bool" ) {
+		addAttr -longName $destAttr -at bool $destParticleObj;
+	} else if( $attrType == "float" ) {
+		addAttr -longName $destAttr -at "float" $destParticleObj;
+	} else if( $attrType == "float3" ) {
+		if( $prefixStr = match( "Value", $sourceAttr ) != "" ) //kind of a hack, but attributes with "Value" in the name will have 3 floats in the UI, attributes without will be displayed as a color picker.
+			addAttr -longName $destAttr -at float3 $destParticleObj;
+		else
+			addAttr -longName $destAttr -at float3 -usedAsColor $destParticleObj;
+		addAttr -longName ($destAttr+"_R") -at "float" -parent $destAttr $destParticleObj; //krakatoa modifier color attributes use this naming convension.
+		addAttr -longName ($destAttr+"_G") -at "float" -parent $destAttr $destParticleObj;
+		addAttr -longName ($destAttr+"_B") -at "float" -parent $destAttr $destParticleObj;
+	} else if( $attrType == "enum" ) {
+		addChannelNameAttribute $destAttr $destParticleObj "Color";
+	} else {
+		warning ("Krakatoa does not support modifier attributes of type " + $attrType + ".");
+		return;
+	}
+
+	string $sourceAnim[] = `keyframe -q -n ($sourceParticleObj+"."+$sourceAttr)`;
+	if( size($sourceAnim) ) { //key exists, copy it
+		copyKey -at $sourceAttr $sourceParticleObj;
+		pasteKey -o "replaceCompletely" -at $destAttr $destParticleObj;
+	} else { //no key
+		if( `connectionInfo -id ($sourceParticleObj+"."+$sourceAttr)` ) { //connection exists, copy it
+			// sourceAttr is destination of a connection.
+			string $sources[] = `listConnections -d 0 -s 1 -p 1 ($sourceParticleObj+"."+$sourceAttr)`;
+			connectAttr -f $sources[0] ($destParticleObj+"."+$destAttr);
+		} else { //no connection
+			if( $attrType == "string" ) {
+				setAttr ($destParticleObj+"."+$destAttr) -type "string" `getAttr ($sourceParticleObj+"."+$sourceAttr)`;
+			} else if( $attrType == "float3" ) {
+				float $floatArray[] = `getAttr ($sourceParticleObj+"."+$sourceAttr)`;
+				setAttr ($destParticleObj+"."+$destAttr) -type float3 $floatArray[0] $floatArray[1] $floatArray[2];
+			} else if ( $attrType == "enum" ){
+				// The only thing we used enum for previously was the channel type.  It needs to changed into a string
+				string $channelList[] = KMYMOD_Migration_getChannelTypes();
+				int $selection = `getAttr ($sourceParticleObj+"."+$sourceAttr)`;
+				string $channel = $channelList[$selection];
+				setAttr ($destParticleObj+"."+$destAttr) -type "string" $channel;
+
+			} else {
+				//single long, float get set like this.
+				setAttr ($destParticleObj+"."+$destAttr) `getAttr ($sourceParticleObj+"."+$sourceAttr)`;
+			}
+		}
+	}
+}
+
+global proc int PRTMOD_Migration_getModifierCount( string $particleObj ) {
+	int $maxModIndex = 0;
+	string $attrList[] = eval ("attributeInfo -l false " + $particleObj);
+	for( $attr in $attrList ) {
+		$prefixStr = match( "^KMod[0-9]+_", $attr );
+		if( $prefixStr != "" ) {
+			$numStr = match( "[0-9]+", $prefixStr );
+			int $num = (int)$numStr;
+			if( $num > $maxModIndex )
+				$maxModIndex = $num;
+		}
+	}
+	return $maxModIndex;
+}
+
+global proc string[] PRTMOD_Migration_getModifierAttributes( string $particleObj, int $modIndex ) {
+	string $modifierAttrs[] = {};
+	string $attrList[] = eval ("attributeInfo -l false " + $particleObj);
+	for( $attr in $attrList ) {
+		$prefixStr = match( "^KMod[0-9]+_", $attr );
+		if( $prefixStr != "" ) {
+			$numStr = match( "[0-9]+", $prefixStr );
+			if( $numStr == $modIndex ) {
+				$modifierAttrs[size($modifierAttrs)] = $attr;
+			}
+		}
+	}
+	
+	return $modifierAttrs;
+}
+
+global proc string PRTMOD_Migration_getModifierType( string $particleObj, int $index ) {
+	string $attrList[] = eval ("attributeInfo -l false " + $particleObj);
+	for( $attr in $attrList ) {
+		if( match( "^KMod"+$index+"_.+_Enabled$", $attr ) != "" ) {
+			$modType = substitute( "^KMod"+$index+"_", $attr, "" );
+			$modType = substitute( "_Enabled$", $modType, "" );
+			return $modType;
+		}
+	}
+	return "";
+}
+
+global proc string[] PRTMOD_Migration_deleteAllModifierAttributes( string $particleObj ) {
+	string $attrList[] = eval ("attributeInfo -l false " + $particleObj);
+	for( $attr in $attrList ) {
+		$prefixStr = match( "^KMod[0-9]+_", $attr );
+		if( $prefixStr != "" ) {
+			deleteAttr ($particleObj+"."+$attr);
+		}
+	}
+	return $attrList;
+}
+
+
+//KMY 2.3 Migration function. To be removed eventually.
+global proc PRTMOD_Migration_ConvertDeprecatedModifiersInternal( string $particleObj ) {
+
+	string $objectToConnectTo;
+	if ( `nodeType $particleObj` == "particle" || `nodeType $particleObj` == "nParticle" ) {
+		// if there's a deformed version, I'm just going to add all the modifiers found onto that
+		string $hasDeformed = `KMY_mayaParticleGetDeformed $particleObj`;
+		if ( $hasDeformed != "" )
+			$objectToConnectTo = $hasDeformed;
+		else
+			$objectToConnectTo = $particleObj;
+		$objectToConnectTo = `KMY_getPRTMayaParticleFromMayaParticle $objectToConnectTo true`;
+		$objectToConnectTo = `MKYMOD_getLastModifier $objectToConnectTo`;
+	} else {
+		$objectToConnectTo = $particleObj;
+	}
+
+	int $numModifiers = `PRTMOD_Migration_getModifierCount $particleObj`;
+	for( $i=1; $i<=$numModifiers; $i=$i+1 ) {
+
+		string $modType = PRTMOD_Migration_getModifierType( $particleObj, $i );
+		string $newModType = "None";
+		string $objectName = "None";
+		if( $modType == "Set_Float_Channel" ) {
+			$newModType = "Set Float Channel";
+			$objectName = "PRTSetFloat";
+		} else if( $modType == "Set_Float3_Channel" ) {
+			$newModType = "Set Vector Channel";
+			$objectName = "PRTSetVector";
+		} else if( $modType == "Copy_Channel" ) {
+			$newModType = "Copy Channel";
+			$objectName = "PRTCopy";
+		} else if( $modType == "Scale_Channel" ) {
+			$newModType = "Scale Channel";
+			$objectName = "PRTScale";
+		} else if( $modType == "Apply_Texture" ) {
+			$newModType = "Apply Texture";
+			$objectName = "PRTApplyTexture";
+		} else if( $modType == "Repopulate_Particles" ) {
+			$newModType = "Repopulate Particles";
+			$objectName = "PRTRepopulate";
+		} else {
+			warning( "In object: " + $particleObj + ": Modifier type " + $modType + " is not support and will not be used." );
+			continue;
+		}
+
+		string $newNode = KMYMOD_addStreamModifier( "PRTModifier", $objectName, $objectToConnectTo );
+		if ( $newNode != "" ) {
+			
+			//set the node type
+			setAttr -type "string" ($newNode + "." + "inModifiersMethod") $newModType;
+
+			//copy over the attributes
+			string $modAttrList[] = PRTMOD_Migration_getModifierAttributes( $particleObj, $i );
+			for( $modAttr in $modAttrList ) {
+				if( $modAttr == ("KMod" + $i + "_" + $modType + "_Enabled") ) {
+					setAttr ($newNode + "." + "inEnabled") `getAttr ($particleObj+"."+$modAttr)`;
+				} else if( $modAttr == ("KMod" + $i + "_Name") ) {
+					setAttr ($newNode + "." + "inModifiersName") -type "string" `getAttr ($particleObj+"."+$modAttr)`;
+				} else {
+					//remove index from attribute name
+					string $newModAttr = substitute( "^KMod"+$i+"_", $modAttr, "KMod_" );
+					//copy attribute to newly created object
+					PRTMOD_Migration_duplicateAtribute( $particleObj, $modAttr, $newNode, $newModAttr );
+				}
+			}
+
+			KMYMOD_initializeStreamModifier( $newNode );
+			$objectToConnectTo = $newNode; //update for the next modifier
+		}
+	}
+
+	//delete all the old modifiers
+	PRTMOD_Migration_deleteAllModifierAttributes( $particleObj );
+}
+
+global proc PRTMOD_ConvertAllDeprecatedModifiers()
+{
+	//collect objects that can have modifiers 
+	string $particleObj[] = `ls -typ "particle" -typ "nParticle"`;
+	string $prtLoaderObj[] = `ls -typ "PRTLoader"`;
+	string $prtFractalObj[] = `ls -typ "PRTFractal"`;
+	string $prtSurfaceObj[] = `ls -typ "PRTSurface"`;
+	string $prtVolumeObj[] = `ls -typ "PRTVolume"`;
+	appendStringArray( $particleObj, $prtLoaderObj, size($prtLoaderObj) );
+	appendStringArray( $particleObj, $prtFractalObj, size($prtFractalObj) );
+	appendStringArray( $particleObj, $prtSurfaceObj, size($prtSurfaceObj) );
+	appendStringArray( $particleObj, $prtVolumeObj, size($prtVolumeObj) );
+	
+	for( $obj in $particleObj ) {
+		PRTMOD_Migration_ConvertDeprecatedModifiersInternal( $obj );
+	}
+}

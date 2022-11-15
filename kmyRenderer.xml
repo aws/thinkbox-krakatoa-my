@@ -1,0 +1,201 @@
+<?xml version="1.0"?>
+<!DOCTYPE renderer SYSTEM "renderer.dtd">
+<!--
+  Top level tag, mandatory:
+	<renderer>: "desc" gives a one line description.
+
+  Header tags, not mandatory, must be specified only once.
+    <melheader>: "s" is a mel script executed just after the file is read 
+    <meltrailer>: "s" is a mel script executed after all flags are converted
+        to mel. Should contain at least the rendering command.
+
+  Other tags:
+    <sep>: "desc" produces a line in the help. Blank if desc is missing.
+    <attr>: produces a setAttr line.
+        "n" is the flag name.
+        "s" the attribute name.
+        "t" the parameter type, used in help description.
+        "h" the help description.
+    <attrString>: produces a setAttr line for a string attribute.
+        Same parameters as <attr>, but for string attributes.
+    <mel>: Calls a mel script.
+        "n" is the flag name.
+        "p" the number of parameters.
+        "s" the string defining the action %1 ... %p are replaced with values
+                read after the flag.
+        "t" the parameter types, used in help description.
+        "h" the help description.
+-->
+<renderer desc="Krakatoa MY Renderer">
+	<melheader s='if( !`pluginInfo -q -l MayaKrakatoa` ) { loadPlugin("MayaKrakatoa"); } string $rl=""; string $rp=""; string $options=""; select defaultRenderGlobals; setAttr .renderAll 1; float $resize=-1.;'/>
+	<meltrailer s='setMayaSoftwareLayers($rl, $rp); setImageSizePercent($resize); mayaBatchRenderProcedure(0, "", "", "MayaKrakatoa", $options);'/>
+	<sep/>
+	<!-- ______________________________________________________________ -->
+	<sep desc="General purpose flags:"/>
+	<mel n="rd" p="1" t="path" s='workspace -fr "images" "%1";workspace -fr "depth" "%1";' h="Directory in which to store image file"/>
+	<mel n="of" p="1" t="string" s='setMayaSoftwareImageFormat("%1")' h="Output image file format. See the Render Settings window to\n\tfind available formats"/>
+	<attrString n="im" s=".imageFilePrefix" t="filename" h="Image file output name"/>	
+	<sep/>
+	<!-- ______________________________________________________________ -->
+	<sep desc="Frame numbering options"/>
+	<mel n="s" p="1" t="float" s="removeRenderLayerAdjustmentAndUnlock .animation; setAttr .animation 1; removeRenderLayerAdjustmentAndUnlock .startFrame; setAttr .startFrame %1" h="Starting frame for an animation sequence"/>
+	<mel n="e" p="1" t="float" s="removeRenderLayerAdjustmentAndUnlock .animation; setAttr .animation 1; removeRenderLayerAdjustmentAndUnlock .endFrame; setAttr .endFrame %1" h="End frame for an animation sequence"/>
+	<attr n="b" s=".byFrameStep" t="float" h="By frame (or step) for an animation sequence"/>
+	<attr n="pad" s=".extensionPadding" t="int" h="Number of digits in the output image frame file name\n\textension"/>
+	<mel n="rfs" p="1" t="int" s="removeRenderLayerAdjustmentAndUnlock .modifyExtension; setAttr .modifyExtension 1; removeRenderLayerAdjustmentAndUnlock .startExtension; setAttr .startExtension %1" h="Renumber Frame Start: number for the first image when\n\trenumbering frames"/>
+	<attr n="rfb" s=".byExtension" t="int" h="Renumber Frame By (or step) used for renumbering frames"/>
+	<mel n="fnc" s='setMayaSoftwareFrameExt("%1", 1)' p="1" t="int" h="File Name Convention: any of name, name.ext, ... See the\n\tRender Settings window to find available options. Use namec and\n\tnamec.ext for Multi Frame Concatenated formats. As a shortcut,\n\tnumbers 1, 2, ... can also be used"/>
+	<sep/>
+	<!-- ______________________________________________________________ -->
+	<sep desc="Camera options"/>
+	<mel n="cam" s='makeCameraRenderable("%1")' p="1" t="name" h="Specify which camera to be rendered"/>
+	<mel n="rgb" s='applyOnCameras("image", "%1")' p="1" t="boolean" h="Turn RGB output on or off"/>
+	<mel n="alpha" s='applyOnCameras("mask", "%1")' p="1" t="boolean" h="Turn Alpha output on or off"/>
+	<mel n="depth" s='applyOnCameras("depth", "%1")' p="1" t="boolean" h="Turn Depth output on or off"/>
+	<mel n="iip" s="disableImagePlanes" p="0" t="" h="Ignore Image Planes. Turn off all image planes before\n\trendering"/>
+	<sep/>
+	<!-- ______________________________________________________________ -->
+	<sep desc="Resolution options"/>
+	<attr n="x" s="defaultResolution.width" t="int" h="Set X resolution of the final image"/>
+	<attr n="y" s="defaultResolution.height" t="int" h="Set Y resolution of the final image"/>
+	<mel n="percentRes" s="$resize=%1" p="1" t="float" h="Renders the image using percent of the resolution"/>
+	<attr n="ard" s="defaultResolution.deviceAspectRatio" t="float" h="Device aspect ratio for the rendered image"/>
+	<attr n="par" s="defaultResolution.pixelAspectRatio" t="float" h="Pixel aspect ratio for the rendered image"/>
+	<sep/>
+	<!-- ______________________________________________________________ -->
+	<sep desc="Render Layers and Passes:"/>
+	<mel n="rl" s='$rl="%1"' p="1" t="boolean|name(s)" h="Render each render layer separately"/>
+	<mel n="rp" s='$rp="%1"' p="1" t="boolean|name(s)" h="Render passes separately. 'all' will render all passes"/>
+	<mel n="sel" p="1" s="select -add %1; setAttr defaultRenderGlobals.renderAll 0" t="boolean|name(s)" h="Selects which objects, groups and/or sets to render"/>
+	<mel n="l" p="1" s="selectLayerMembers %1; removeRenderLayerAdjustmentAndUnlock defaultRenderGlobals.renderAll; setAttr defaultRenderGlobals.renderAll 0" t="boolean|name(s)" h="Selects which display and render layers to render"/>
+	<sep/>
+	<!-- ______________________________________________________________ -->
+	<sep desc="Mel callbacks"/>
+	<attrString n="preRender" s=".preMel" t="string" h="Mel code executed before rendering"/>
+	<attrString n="postRender" s=".postMel" t="string" h="Mel code executed after rendering"/>
+	<attrString n="preLayer" s=".preRenderLayerMel" t="string" h="Mel code executed before each render layer"/>
+	<attrString n="postLayer" s=".postRenderLayerMel" t="string" h="Mel code executed after each render layer"/>
+	<attrString n="preFrame" s=".preRenderMel" t="string" h="Mel code executed before each frame"/>
+	<attrString n="postFrame" s=".postRenderMel" t="string" h="Mel code executed after each frame"/>
+	<mel n="pre" s='print("WARNING: flag -pre is obsolete. Use -preRender, -preLayer, -preFrame\n");' p="1" t="string" h="Obsolete flag"/>
+	<mel n="post" s='print("WARNING: flag -post is obsolete. Use -postRender, -postLayer, -postFrame\n");' p="1" t="string" h="Obsolete flag"/>
+	<sep/>
+	<!-- ______________________________________________________________ -->
+	<sep desc="Specific options for the layers who use Maya software renderer:"/>
+	<sep/>
+	<!-- ______________________________________________________________ -->
+	<sep desc="Anti-aliasing quality only for Maya software renderer:"/>
+	<attr n="sw:eaa" s="defaultRenderQuality.edgeAntiAliasing" t="int" h="The anti-aliasing quality of EAS (Abuffer). One of:\n\thighest(0), high(1), medium(2), low(3)"/>
+	<!-- Number of samples options -->
+	<attr n="sw:ss" s="defaultRenderQuality.shadingSamples" t="int" h="Global number of shading samples per surface in a pixel"/>
+	<attr n="sw:mss" s="defaultRenderQuality.maxShadingSamples" t="int" h="Maximum number of adaptive shading samples per surface\n\tin a pixel"/>
+	<attr n="sw:mvs" s="defaultRenderQuality.visibilitySamples" t="int" h="Number of motion blur visibility samples"/>
+	<attr n="sw:mvm" s="defaultRenderQuality.maxVisibilitySamples" t="int" h="Maximum number of motion blur visibility samples"/>
+	<attr n="sw:pss" s="defaultRenderQuality.particleSamples" t="int" h="Number of particle visibility samples"/>
+	<attr n="sw:vs" s="defaultRenderQuality.volumeSamples" t="int" h="Global number of volume shading samples"/>
+	<!-- Multi pixel filtering options -->
+	<attr n="sw:ufil" s="defaultRenderQuality.useMultiPixelFilter" t="boolean" h="If true, use the multi-pixel filtering; otherwise use\n\tsingle pixel filtering"/>
+	<attr n="sw:pft" s="defaultRenderQuality.pixelFilterType" t="int" h="When useFilter is true, identifies one of the following\n\tfilters: box(0), triangle(2), gaussian(4), quadratic(5)"/>
+	<attr n="sw:pfx" s="defaultRenderQuality.pixelFilterWidthX" t="float" h="When useFilter is true, defines the X size of the filter"/>
+	<attr n="sw:pfy" s="defaultRenderQuality.pixelFilterWidthY" t="float" h="When useFilter is true, defines the Y size of the filter"/>
+	<!-- Contrast options -->
+	<attr n="sw:rct" s="defaultRenderQuality.redThreshold" t="float" h="Red channel contrast threshold"/>
+	<attr n="sw:gct" s="defaultRenderQuality.greenThreshold" t="float" h="Green channel contrast threshold"/>
+	<attr n="sw:bct" s="defaultRenderQuality.blueThreshold" t="float" h="Blue channel contrast threshold"/>
+	<attr n="sw:cct" s="defaultRenderQuality.coverageThreshold" t="float" h="Pixel coverage contrast threshold (default is 1.0/8.0)"/>
+	<sep/>
+	<!-- ______________________________________________________________ -->
+	<sep desc="Raytracing quality only for Maya software renderer:"/>
+	<attr n="sw:ert" s="defaultRenderQuality.enableRaytracing" t="boolean" h="Enable ray tracing"/>
+	<attr n="sw:rfl" s="defaultRenderQuality.reflections" t="int" h="Maximum ray-tracing reflection level"/>
+	<attr n="sw:rfr" s="defaultRenderQuality.refractions" t="int" h="Maximum ray-tracing refraction level"/>
+	<attr n="sw:sl" s="defaultRenderQuality.shadows" t="int" h="Maximum ray-tracing shadow ray depth"/>
+	<sep/>
+	<!-- ______________________________________________________________ -->
+	<sep desc="Field Options only for Maya software renderer:"/>
+	<mel n="sw:field" p="1" t="boolean" s="removeRenderLayerAdjustmentAndUnlock defaultResolution.fields; if (%1) setAttr defaultResolution.fields 3; else  setAttr defaultResolution.fields 0;" h="Enable field rendering. When on, images are interlaced"/>
+	<mel n="sw:pal" s="removeRenderLayerAdjustmentAndUnlock defaultResolution.oddFieldFirst; setAttr defaultResolution.oddFieldFirst 0" h="When field rendering is enabled, render even field\n\tfirst (PAL)"/>
+	<mel n="sw:ntsc" s="removeRenderLayerAdjustmentAndUnlock defaultResolution.oddFieldFirst; setAttr defaultResolution.oddFieldFirst 1" h="When field rendering is enabled, render odd field\n\tfirst (NTSC)"/>
+	<sep/>
+	<!-- ______________________________________________________________ -->
+	<sep desc="Motion Blur only for Maya software renderer:"/>
+	<attr n="sw:mb" s=".motionBlur" t="boolean" h="Motion blur on/off"/>
+	<attr n="sw:mbf" s=".motionBlurByFrame" t="float" h="Motion blur by frame"/>
+	<mel n="sw:sa" s='applyOnCameras("shutterAngle", "%1")' p="1" t="float" h="Shutter angle for motion blur (1-360)"/>
+	<!-- motionBlurType is 0 for 2d, 1 for 3d, the bool needs to be inverted -->
+	<mel n="sw:mb2d" p="1" t="boolean" s="removeRenderLayerAdjustmentAndUnlock .motionBlurType; setAttr .motionBlurType (!%1); if (!%1) {removeRenderLayerAdjustmentAndUnlock .motionBlur; setAttr .motionBlur 1;}" h="Motion blur 2D on/off"/>
+	<attr n="sw:bll" s=".blurLength" t="float" h="2D motion blur blur length"/>
+	<attr n="sw:bls" s=".blurSharpness" t="float" h="2D motion blur blur sharpness"/>
+	<attr n="sw:smv" s=".smoothValue" t="int" h="2D motion blur smooth value"/>
+	<attr n="sw:smc" s=".smoothColor" t="boolean" h="2D motion blur smooth color on/off"/>
+	<attr n="sw:kmv" s=".keepMotionVector" t="boolean" h="Keep motion vector for 2D motion blur on/off"/>
+	<sep/>
+	<!-- ______________________________________________________________ -->
+	<sep desc="Render Options only for Maya software renderer:"/>
+	<attr n="sw:ifg" s=".ignoreFilmGate" t="boolean" h="Use the film gate for rendering if false"/>
+	<attr n="sw:edm" s=".enableDepthMaps" t="boolean" h="Enable depth map usage"/>
+	<attr n="sw:g" s=".gammaCorrection" t="float" h="Gamma value"/>
+	<!-- Color compositing options -->
+	<attr n="sw:premul" s=".composite" t="boolean" h="Premultiply color by the alpha value"/>
+	<attr n="sw:premulthr" s=".compositeThreshold" t="float" h="When premultiply is on, defines the threshold used to\n\tdetermine whether to premultiply or not"/>
+	<sep/>
+	<!-- ______________________________________________________________ -->
+	<sep desc="Memory and Performance only for Maya software renderer:"/>
+	<attr n="sw:uf" s=".useFileCache" t="boolean" h="Use the tessellation file cache"/>
+	<attr n="sw:oi" s=".optimizeInstances" t="boolean" h="Dynamically detects similarly tessellated surfaces"/>
+	<attr n="sw:rut" s=".reuseTessellations" t="boolean" h="Reuse render geometry to generate depth maps"/>
+	<attr n="sw:udb" s=".useDisplacementBoundingBox" t="boolean" h="Use the displacement bounding box scale to optimize\n\tdisplacement-map performance"/>
+	<attr n="sw:mm" s=".maximumMemory" t="int" h="Renderer maximum memory use (in Megabytes)"/>
+	<sep/>
+	<!-- ______________________________________________________________ -->
+	<sep desc="Specific options for the layers who use Maya hardware renderer:"/>
+	<sep/>
+	<!-- ______________________________________________________________ -->
+	<sep desc="Quality flags only for Maya hardware renderer:"/>
+	<attr n="hw:ehl" s=".enableHighQualityLighting" t="boolean" h="Enable high quality lighting"/>
+	<attr n="hw:ams" s=".enableAcceleratedMultiSampling" t="boolean" h="Accelerated multi sampling"/>
+	<attr n="hw:ns" s=".numberOfSamples" t="int" h="Number of samples per pixel"/>
+	<attr n="hw:tsc" s=".transparentShadowCasting" t="boolean" h="Transparent shadow maps"/>
+	<attr n="hw:ctr" s=".colorTextureResolution" t="int" h="Color texture resolution"/>
+	<attr n="hw:btr" s=".bumpTextureResolution" t="int" h="Bump texture resolution"/>
+	<attr n="hw:tc" s=".textureCompression" t="boolean" h="Enable texture compression"/>
+	<sep/>
+	<!-- ______________________________________________________________ -->
+	<sep desc="Render options only for Maya hardware renderer:"/>
+	<attr n="hw:c" s=".culling" t="boolean" h="Culling mode.\n\t\t0: per object.\n\t\t1: all double sided.\n\t\t2: all single sided"/>
+	<attr n="hw:sco" s=".smallObjectCulling" t="boolean" h="Enable small object culling"/>
+	<attr n="hw:ct" s=".cullingThreshold" t="float" h="Small object culling threshold"/>
+	<sep/>
+	<!-- ______________________________________________________________ -->
+	<sep desc="Mel callbacks only for Maya hardware renderer:"/>
+	<attr n="hw:mb" s=".enableMotionBlur" t="boolean" h="Enable motion blur"/>
+	<attr n="hw:mbf" s=".motionBlurByFrame" t="float" h="Motion blur by frame"/>
+	<attr n="hw:ne" s=".numberOfExposures" t="int" h="Number of exposures"/>
+	<attr n="hw:egm" s=".enableGeometryMask" t="boolean" h="Enable geometry mask"/>
+	<sep/>
+	<!-- ______________________________________________________________ -->
+	<sep desc="Specific options for the layers who use Mentalray renderer "/>
+	<sep/>
+	<!-- ______________________________________________________________ -->
+	<sep desc="Other only for Mentalray renderer:"/>
+	<mel n="mr:v" ln="mr:verbose" p="1" s="global int $g_mrBatchRenderCmdOption_VerbosityOn = true; global int $g_mrBatchRenderCmdOption_Verbosity = %1" t="int" h="Set the verbosity level.\n\t0 to turn off messages\n\t1 for fatal errors only\n\t2 for all errors\n\t3 for warnings\n\t4 for informational messages\n\t5 for progress messages\n\t6 for detailed debugging messages"/>
+	<mel n="mr:rt" ln="mr:renderThreads" p="1" s="global int $g_mrBatchRenderCmdOption_NumThreadOn = true; global int $g_mrBatchRenderCmdOption_NumThread = %1" t="int" h="Specify the number of rendering threads."/>
+	<mel n="mr:art" ln="mr:autoRenderThreads" p="0" s="global int $g_mrBatchRenderCmdOption_NumThreadAutoOn = true; global int $g_mrBatchRenderCmdOption_NumThreadAuto = true" t="" h="Automatically determine the number of rendering threads."/>
+	<mel n="mr:mem" ln="mr:memory" p="1" s="global int $g_mrBatchRenderCmdOption_MemLimitOn = true; global int $g_mrBatchRenderCmdOption_MemLimit = %1" t="int" h="Set the memory limit (in MB)."/>
+	<mel n="mr:aml" ln="mr:autoMemoryLimit" p="0" s="global int $g_mrBatchRenderCmdOption_MemLimitAutoOn = true; global int $g_mrBatchRenderCmdOption_MemLimitAuto = true" t="" h="Compute the memory limit automatically."/>
+	<mel n="mr:ts" ln="mr:taskSize" p="1" s="global int $g_mrBatchRenderCmdOption_TaskSizeOn = true; global int $g_mrBatchRenderCmdOption_TaskSize = %1" t="int" h="Set the pixel width/height of the render tiles."/>
+	<mel n="mr:at" ln="mr:autoTiling" p="0" s="global int $g_mrBatchRenderCmdOption_TaskSizeAutoOn = true; global int $g_mrBatchRenderCmdOption_TaskSizeAuto = true" t="" h="Automatically determine optimal tile size."/>
+	<mel n="mr:fbm" ln="mr:frameBufferMode" p="1" s="global int $g_mrBatchRenderCmdOption_FBModeOn = true; global int $g_mrBatchRenderCmdOption_FBMode = %1" t="int" h="Set the frame buffer mode.\n\t0 in-memory framebuffers\n\t1 memory mapped framebuffers\n\t2 cached framebuffers"/>
+	<mel n="mr:rnm" s='if(%1) $opt += " -renderNoMaster ";' p="1" t="boolean" h="Network rendering option. If true, mental ray renders\n\talmost everything on slave machines, thus reducing the workload on the\n\tmaster machine"/>
+	<mel n="mr:lic" s='$opt += " -lic %1";' p="1" t="string" h="Specify satellite licensing option. mu/unlimited or\n\tmc/complete."/>
+	<mel n="mr:reg" s="setMentalRayRenderRegion(%1,%2,%3,%4)" t="int int int int" p="4" h="Set sub-region pixel boundary of the final image:\n\tleft, right, bottom, top"/>
+	<mel n="mr:rat" ln="allRenderable" p="0" s="setAttr defaultRenderGlobals.renderedOutput 0" t="" h="Render all renderable (2D and 3D)"/>
+	<mel n="mr:rto" ln="renderTargetsOnly" p="0" s="setAttr defaultRenderGlobals.renderedOutput 1" t="" h="Render target (2D) only rendering"/>
+	<mel n="mr:ort" ln="omitRenderTargets" p="0" s="setAttr defaultRenderGlobals.renderedOutput 2" t="" h="Omit render targets and render 3D only"/>
+	<!-- ______________________________________________________________ -->
+	<sep desc=" *** Remember to place a space between option flags and their arguments. ***"/>
+	<sep desc="Any boolean flag will take the following values as TRUE: on, yes, true, or 1."/>
+	<sep desc="Any boolean flag will take the following values as FALSE: off, no, false, or 0."/>
+	<sep/>
+	<sep desc="    e.g. -s 1 -e 10 -x 512 -y 512 -cam persp -mr:v 5 file."/>
+</renderer>
